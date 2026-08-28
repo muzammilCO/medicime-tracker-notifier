@@ -1,0 +1,34 @@
+name: Reminder - Workout day (pre + post)
+
+# Your gym time will vary day to day, so this fires once at a default slot.
+# Edit the cron times below to match your actual routine, or just ignore
+# this notification on rest days.
+
+on:
+  schedule:
+    # Pre-workout: 6:00 PM IST = 12:30 UTC
+    - cron: '30 12 * * *'
+    # Post-workout: 7:15 PM IST = 13:45 UTC
+    - cron: '45 13 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send push notification via ntfy.sh
+        run: |
+          HOUR_UTC=$(date -u +%H%M)
+          if [ "$HOUR_UTC" -lt "1300" ]; then
+            TITLE="Pre-workout"
+            BODY="L-Arginine + Proanthocyanidin sachet, 30-45 min before training. (Skip if today is a rest day.)"
+          else
+            TITLE="Post-workout"
+            BODY="Protein scoop + Creatine 3-5g. (Creatine every day, even rest days.)"
+          fi
+          curl -s \
+            -H "Title: $TITLE" \
+            -H "Priority: default" \
+            -H "Tags: muscle" \
+            -d "$BODY" \
+            "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}"

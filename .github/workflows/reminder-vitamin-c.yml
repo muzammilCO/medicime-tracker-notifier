@@ -1,9 +1,9 @@
-name: Reminder - Evening stack
+name: Reminder - Vitamin C (weekly)
 
 on:
   schedule:
-    # 8:30 PM IST = 15:00 UTC, every day
-    - cron: '0 15 * * *'
+    # 8:00 AM IST = 02:30 UTC, every Wednesday
+    - cron: '30 2 * * 3'
   workflow_dispatch: {}
 
 jobs:
@@ -13,8 +13,8 @@ jobs:
       - name: Send push notification via ntfy.sh
         run: |
           curl -s \
-            -H "Title: Evening stack" \
+            -H "Title: Vitamin C - weekly dose" \
             -H "Priority: default" \
             -H "Tags: pill" \
-            -d "Calcium+D3+Mg+Zn combo, Omega-3, Maglyci-D3 — with dinner." \
+            -d "500mg chewable, with any meal." \
             "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}"
