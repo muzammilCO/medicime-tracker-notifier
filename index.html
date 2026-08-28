@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Stack — Daily Supplement Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #eef2f0;
+    --card: #ffffff;
+    --ink: #16221f;
+    --ink-soft: #55645f;
+    --line: #d3ddd7;
+    --teal: #2f6f65;
+    --teal-deep: #1e4a43;
+    --amber: #c98a3f;
+    --amber-soft: #f4e3c9;
+    --danger: #b95c50;
+    --pocket-empty: #e2e8e5;
+    --radius: 14px;
+    --shadow: 0 1px 2px rgba(20,35,30,0.06), 0 4px 14px rgba(20,35,30,0.05);
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body{
+    min-height:100vh;
+    padding: 28px 16px 60px;
+  }
+  .wrap{
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  /* ---- Header ---- */
+  header{
+    margin-bottom: 22px;
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin: 0 0 6px;
+  }
+  h1{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: clamp(28px, 6vw, 36px);
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+  .subhead{
+    color: var(--ink-soft);
+    font-size: 14.5px;
+    margin: 0;
+  }
+
+  /* ---- Blister strip (signature element) ---- */
+  .strip-card{
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 18px 16px 16px;
+    margin: 22px 0 20px;
+  }
+  .strip-label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+    margin: 0 0 12px;
+  }
+  .blister{
+    display:grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+  }
+  .pocket{
+    position: relative;
+    aspect-ratio: 1 / 1.15;
+    border-radius: 10px;
+    background: var(--pocket-empty);
+    border: 1px solid var(--line);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap: 3px;
+    transition: background .25s ease, border-color .25s ease, transform .15s ease;
+  }
+  .pocket .dname{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+  }
+  .pocket .dnum{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .pocket.today{
+    border-color: var(--teal);
+    box-shadow: 0 0 0 2px rgba(47,111,101,0.15) inset;
+  }
+  .pocket.full{
+    background: var(--teal);
+  }
+  .pocket.full .dname, .pocket.full .dnum{ color: #eaf3f0; }
+  .pocket.partial{
+    background: linear-gradient(180deg, var(--teal) var(--pct,50%), var(--pocket-empty) var(--pct,50%));
+  }
+
+  /* ---- workout toggle ---- */
+  .toggle-row{
+    display:flex; align-items:center; justify-content:space-between;
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 14px 16px;
+    margin-bottom: 20px;
+  }
+  .toggle-row .t-label{ font-weight:600; font-size:14.5px; }
+  .toggle-row .t-sub{ font-size:12.5px; color:var(--ink-soft); margin-top:2px; }
+  .switch{
+    position: relative; width:46px; height:26px; flex:0 0 auto;
+    border-radius: 20px; background: var(--pocket-empty); border:1px solid var(--line);
+    cursor:pointer; transition: background .2s ease;
+  }
+  .switch .knob{
+    position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%;
+    background:#fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: transform .2s ease;
+  }
+  .switch.on{ background: var(--amber); border-color: var(--amber); }
+  .switch.on .knob{ transform: translateX(20px); }
+
+  /* ---- Sections ---- */
+  .section{
+    margin-bottom: 18px;
+  }
+  .section-head{
+    display:flex; align-items:baseline; gap:8px;
+    margin: 0 2px 8px;
+  }
+  .section-head .icon{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 12px; color: var(--teal); font-weight:500;
+  }
+  .section-head h2{
+    font-family:'Space Grotesk', sans-serif;
+    font-size: 15px; font-weight:600; margin:0;
+  }
+  .card-list{
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .item{
+    display:flex; align-items:flex-start; gap: 12px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .item:last-child{ border-bottom:none; }
+  .item.disabled{ opacity: 0.42; }
+  .check{
+    flex: 0 0 auto;
+    width: 22px; height: 22px; margin-top: 1px;
+    border-radius: 50%;
+    border: 1.5px solid var(--teal);
+    background: transparent;
+    cursor: pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition: background .15s ease;
+  }
+  .check.checked{ background: var(--teal); }
+  .check.checked::after{
+    content:''; width:8px; height:5px; border-left:2px solid #fff; border-bottom:2px solid #fff;
+    transform: rotate(-45deg) translateY(-1px);
+  }
+  .item.disabled .check{ cursor:not-allowed; border-color: var(--ink-soft); }
+  .item-body{ flex:1; min-width:0; }
+  .item-name{ font-weight:600; font-size: 14.5px; line-height:1.3; }
+  .item-dose{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 12px; color: var(--ink-soft); margin-top: 2px;
+  }
+  .item-note{ font-size: 12.5px; color: var(--ink-soft); margin-top: 3px; }
+  .pill-tag{
+    display:inline-block;
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 10px; text-transform:uppercase; letter-spacing:.05em;
+    padding: 2px 7px; border-radius: 20px;
+    background: var(--amber-soft); color: var(--amber);
+    margin-top: 5px;
+  }
+  .pill-tag.danger{ background:#f3ddd8; color:var(--danger); }
+
+  footer{
+    margin-top: 30px;
+    text-align:center;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+  footer a{ color: var(--teal); }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Personal stack · not medical advice</p>
+    <h1>The Stack</h1>
+    <p class="subhead">Your daily, weekly, and workout-day supplements — one tap to log.</p>
+  </header>
+
+  <div class="strip-card">
+    <p class="strip-label">This week</p>
+    <div class="blister" id="blister"></div>
+  </div>
+
+  <div class="toggle-row">
+    <div>
+      <div class="t-label">Workout day</div>
+      <div class="t-sub">Unlocks L-Arginine + extra protein scoop</div>
+    </div>
+    <div class="switch" id="workoutSwitch"><div class="knob"></div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><span class="icon">AM</span><h2>Morning · with breakfast</h2></div>
+    <div class="card-list" id="list-morning"></div>
+  </div>
+
+  <div class="section" id="section-preworkout">
+    <div class="section-head"><span class="icon">PRE</span><h2>Pre-workout</h2></div>
+    <div class="card-list" id="list-preworkout"></div>
+  </div>
+
+  <div class="section" id="section-postworkout">
+    <div class="section-head"><span class="icon">POST</span><h2>Post-workout</h2></div>
+    <div class="card-list" id="list-postworkout"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><span class="icon">PM</span><h2>Evening · with dinner</h2></div>
+    <div class="card-list" id="list-evening"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><span class="icon">WK</span><h2>Weekly</h2></div>
+    <div class="card-list" id="list-weekly"></div>
+  </div>
+
+  <footer>
+    Data is stored only in this browser (localStorage). Clearing site data resets your history.<br>
+    Review this stack with a doctor before starting — especially the Vitamin D3 correction phase.
+  </footer>
+
+</div>
+
+<script>
+const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+// ---- Supplement data model ----
+// freq: 'daily' | 'workout' | {weekday: 0-6}
+const ITEMS = [
+  { id:'multivit',  name:'Multivitamin with ginseng', dose:'1 tablet', section:'morning', freq:'daily' },
+  { id:'bcomplex',  name:'B-complex with B12', dose:'1 tablet', section:'morning', freq:'daily' },
+  { id:'shilajit',  name:'Shilajit', dose:'500mg, 1 capsule', section:'morning', freq:'daily', note:'With milk or water' },
+
+  { id:'larginine', name:'L-Arginine + Proanthocyanidin', dose:'1 sachet', section:'preworkout', freq:'workout', note:'30–45 min before training' },
+
+  { id:'protein',   name:'Protein powder', dose:'1 scoop (~24–30g)', section:'postworkout', freq:'daily', note:'Extra scoop on non-workout days only if diet falls short' },
+  { id:'creatine',  name:'Creatine monohydrate', dose:'3–5g', section:'postworkout', freq:'daily', note:'Take daily, including rest days' },
+
+  { id:'calcium',   name:'Calcium + D3 + Magnesium + Zinc + Boron/Copper', dose:'1 tablet', section:'evening', freq:'daily' },
+  { id:'omega3',    name:'Omega-3 (EPA/DHA)', dose:'1–2 capsules', section:'evening', freq:'daily' },
+  { id:'maglycid3', name:'Maglyci-D3 (Mg Glycinate 250mg + D3 1000IU)', dose:'1 capsule', section:'evening', freq:'daily', note:'Start only after the D3 60,000 IU correction phase ends', tag:'Phase 2' },
+
+  { id:'d3high',    name:'Vitamin D3 60,000 IU', dose:'1 dose', section:'weekly', freq:{weekday:0}, note:'Sundays · correction phase, 8–10 weeks only', tag:'Phase 1' },
+  { id:'vitc',      name:'Vitamin C 500mg (chewable)', dose:'1 tablet', section:'weekly', freq:{weekday:3}, note:'Wednesdays · topping up a fruit-based diet' },
+];
+
+// ---- Date / storage helpers ----
+function todayKey(d){
+  const dt = d || new Date();
+  return dt.toISOString().slice(0,10);
+}
+function loadDay(key){
+  try{ return JSON.parse(localStorage.getItem('stack:'+key)) || {}; }
+  catch(e){ return {}; }
+}
+function saveDay(key, data){
+  localStorage.setItem('stack:'+key, JSON.stringify(data));
+}
+function isWorkoutDay(key){
+  return loadDay(key).__workout === true;
+}
+function setWorkoutDay(key, val){
+  const d = loadDay(key); d.__workout = val; saveDay(key, d);
+}
+function isChecked(key, id){
+  return !!loadDay(key)[id];
+}
+function setChecked(key, id, val){
+  const d = loadDay(key); d[id] = val; saveDay(key, d);
+}
+
+// items scheduled for a given JS Date
+function itemsForDate(dt){
+  const wd = dt.getDay();
+  const workout = isWorkoutDay(todayKey(dt));
+  return ITEMS.filter(it=>{
+    if(it.freq === 'daily') return true;
+    if(it.freq === 'workout') return workout;
+    if(typeof it.freq === 'object') return it.freq.weekday === wd;
+    return false;
+  });
+}
+
+// ---- Render blister strip (Mon–Sun of current week) ----
+function renderBlister(){
+  const el = document.getElementById('blister');
+  el.innerHTML = '';
+  const now = new Date();
+  const curDow = now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - ((curDow + 6) % 7)); // week starts Monday
+
+  for(let i=0;i<7;i++){
+    const d = new Date(monday);
+    d.setDate(monday.getDate()+i);
+    const key = todayKey(d);
+    const scheduled = itemsForDate(d);
+    const dayData = loadDay(key);
+    const doneCount = scheduled.filter(it=>dayData[it.id]).length;
+    const total = scheduled.length;
+    const pct = total ? Math.round((doneCount/total)*100) : 0;
+
+    const pocket = document.createElement('div');
+    pocket.className = 'pocket';
+    if(key === todayKey()) pocket.classList.add('today');
+    if(total>0 && doneCount===total) pocket.classList.add('full');
+    else if(doneCount>0){ pocket.classList.add('partial'); pocket.style.setProperty('--pct', pct+'%'); }
+
+    pocket.innerHTML = `<div class="dname">${DAY_NAMES[d.getDay()]}</div><div class="dnum">${d.getDate()}</div>`;
+    el.appendChild(pocket);
+  }
+}
+
+// ---- Render a section list ----
+function renderSection(sectionId, containerId){
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  const key = todayKey();
+  const workout = isWorkoutDay(key);
+  const now = new Date();
+  const wd = now.getDay();
+
+  const items = ITEMS.filter(it => it.section === sectionId);
+  let anyRendered = false;
+
+  items.forEach(it=>{
+    let active = false;
+    if(it.freq === 'daily') active = true;
+    else if(it.freq === 'workout') active = workout;
+    else if(typeof it.freq === 'object') active = it.freq.weekday === wd;
+
+    // hide pre/post-workout sections entirely if not a workout day and item is workout-only
+    if(it.freq === 'workout' && !workout) return;
+
+    anyRendered = true;
+    const checked = active && isChecked(key, it.id);
+
+    const row = document.createElement('div');
+    row.className = 'item' + (active ? '' : ' disabled');
+    row.innerHTML = `
+      <div class="check ${checked?'checked':''}" data-id="${it.id}" data-active="${active}"></div>
+      <div class="item-body">
+        <div class="item-name">${it.name}</div>
+        <div class="item-dose">${it.dose}</div>
+        ${it.note ? `<div class="item-note">${it.note}</div>` : ''}
+        ${it.tag ? `<span class="pill-tag ${it.tag==='Phase 1'?'':''}">${it.tag}</span>` : ''}
+        ${!active && it.freq!=='workout' ? `<span class="pill-tag">Not scheduled today</span>` : ''}
+      </div>
+    `;
+    container.appendChild(row);
+  });
+
+  // toggle whole section visibility for workout-only sections when not a workout day
+  const sectionEl = container.closest('.section');
+  if(sectionId === 'preworkout' || sectionId === 'postworkout'){
+    // postworkout has daily items too (protein/creatine), so only hide preworkout fully
+    if(sectionId === 'preworkout'){
+      sectionEl.style.display = workout ? '' : 'none';
+    }
+  }
+}
+
+function renderAll(){
+  renderBlister();
+  renderSection('morning','list-morning');
+  renderSection('preworkout','list-preworkout');
+  renderSection('postworkout','list-postworkout');
+  renderSection('evening','list-evening');
+  renderSection('weekly','list-weekly');
+
+  const sw = document.getElementById('workoutSwitch');
+  sw.classList.toggle('on', isWorkoutDay(todayKey()));
+}
+
+// ---- Event delegation for checkboxes ----
+document.body.addEventListener('click', (e)=>{
+  const check = e.target.closest('.check');
+  if(check){
+    if(check.dataset.active !== 'true') return;
+    const id = check.dataset.id;
+    const key = todayKey();
+    const newVal = !isChecked(key, id);
+    setChecked(key, id, newVal);
+    renderAll();
+    return;
+  }
+  const sw = e.target.closest('#workoutSwitch');
+  if(sw){
+    const key = todayKey();
+    setWorkoutDay(key, !isWorkoutDay(key));
+    renderAll();
+  }
+});
+
+renderAll();
+</script>
+</body>
+</html>
