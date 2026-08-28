@@ -24,6 +24,27 @@ Runs entirely in the browser — no server, no database, no dependencies.
 Open that URL on your phone, then use your browser's **"Add to Home Screen"**
 option so it opens like an app.
 
+## New: browsing history/future + editing your cabinet
+
+- **Week strip navigation** — use the ‹ › arrows to move between weeks, then tap any
+  day (past, today, or future) to view that day's checklist below. Past days can
+  still be checked/corrected; future days show what's scheduled but can't be
+  checked off yet (nothing "taken" can happen in the future).
+- **Manage cabinet** — tap the button top-right to switch into edit mode. From
+  there you can:
+  - Add a new supplement to any time-of-day section (**+ Add**)
+  - Edit an existing one's name, dose, note, section, or schedule (pencil icon)
+  - Delete one (trash icon)
+  - Reorder items within a section with the ↑ / ↓ arrows — arrange the list to
+    match how your actual cabinet/shelf is laid out
+  - Every add, edit, or delete asks **"Are you sure?"** before it actually saves —
+    nothing changes until you confirm.
+- **Important:** editing an item's name or schedule here only changes what shows
+  in the web app. It does **not** automatically update the wording or timing in
+  your GitHub Actions push notifications — those are separate files. If you
+  rename or reschedule something, edit the matching `.github/workflows/*.yml`
+  file too so your phone reminders stay in sync.
+
 ## How it works
 
 - Every checkbox tap is saved to your browser's `localStorage`, keyed by date —

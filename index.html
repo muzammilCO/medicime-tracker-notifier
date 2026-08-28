@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The Stack — Daily Supplement Tracker</title>
+<title>The Stack — Supplement Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -18,430 +18,668 @@
     --amber: #c98a3f;
     --amber-soft: #f4e3c9;
     --danger: #b95c50;
+    --danger-soft: #f3ddd8;
     --pocket-empty: #e2e8e5;
     --radius: 14px;
     --shadow: 0 1px 2px rgba(20,35,30,0.06), 0 4px 14px rgba(20,35,30,0.05);
   }
   *{ box-sizing: border-box; }
-  html,body{
-    margin:0; padding:0;
-    background: var(--bg);
-    color: var(--ink);
-    font-family: 'Inter', system-ui, sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-  body{
-    min-height:100vh;
-    padding: 28px 16px 60px;
-  }
-  .wrap{
-    max-width: 640px;
-    margin: 0 auto;
-  }
+  html,body{ margin:0; padding:0; background: var(--bg); color: var(--ink);
+    font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body{ min-height:100vh; padding: 24px 16px 70px; }
+  .wrap{ max-width: 640px; margin: 0 auto; }
+  button{ font-family: inherit; }
 
-  /* ---- Header ---- */
-  header{
-    margin-bottom: 22px;
-  }
-  .eyebrow{
-    font-family:'IBM Plex Mono', monospace;
-    font-size: 11.5px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--teal);
-    margin: 0 0 6px;
-  }
-  h1{
-    font-family:'Space Grotesk', sans-serif;
-    font-weight: 700;
-    font-size: clamp(28px, 6vw, 36px);
-    margin: 0 0 4px;
-    letter-spacing: -0.01em;
-  }
-  .subhead{
-    color: var(--ink-soft);
-    font-size: 14.5px;
-    margin: 0;
-  }
+  header{ margin-bottom: 18px; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .eyebrow{ font-family:'IBM Plex Mono', monospace; font-size: 11.5px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--teal); margin: 0 0 6px; }
+  h1{ font-family:'Space Grotesk', sans-serif; font-weight: 700; font-size: clamp(26px, 6vw, 34px);
+    margin: 0 0 4px; letter-spacing: -0.01em; }
+  .subhead{ color: var(--ink-soft); font-size: 14px; margin: 0; }
 
-  /* ---- Blister strip (signature element) ---- */
-  .strip-card{
-    background: var(--card);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 18px 16px 16px;
-    margin: 22px 0 20px;
+  .edit-toggle{
+    flex: 0 0 auto; margin-top: 4px;
+    font-family:'IBM Plex Mono', monospace; font-size: 12px; font-weight:500;
+    text-transform: uppercase; letter-spacing: .04em;
+    background: var(--card); border: 1.5px solid var(--teal); color: var(--teal);
+    padding: 9px 12px; border-radius: 10px; cursor: pointer; box-shadow: var(--shadow);
+    transition: background .15s ease, color .15s ease;
+    white-space: nowrap;
   }
-  .strip-label{
-    font-family:'IBM Plex Mono', monospace;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--ink-soft);
-    margin: 0 0 12px;
+  .edit-toggle.active{ background: var(--teal); color:#fff; }
+
+  /* ---- Week strip ---- */
+  .strip-card{ background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 16px 16px 16px; margin: 0 0 16px; }
+  .strip-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom: 10px; }
+  .strip-label{ font-family:'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--ink-soft); margin: 0; }
+  .week-nav{ display:flex; gap:6px; align-items:center; }
+  .week-nav button{
+    background: var(--pocket-empty); border: none; border-radius: 8px; width:28px; height:28px;
+    color: var(--ink); font-size: 15px; cursor:pointer; display:flex; align-items:center; justify-content:center;
   }
-  .blister{
-    display:grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 8px;
-  }
-  .pocket{
-    position: relative;
-    aspect-ratio: 1 / 1.15;
-    border-radius: 10px;
-    background: var(--pocket-empty);
-    border: 1px solid var(--line);
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    gap: 3px;
-    transition: background .25s ease, border-color .25s ease, transform .15s ease;
-  }
-  .pocket .dname{
-    font-family:'IBM Plex Mono', monospace;
-    font-size: 10px;
-    color: var(--ink-soft);
-    text-transform: uppercase;
-  }
-  .pocket .dnum{
-    font-family:'Space Grotesk', sans-serif;
-    font-weight: 600;
-    font-size: 14px;
-    color: var(--ink);
-  }
-  .pocket.today{
-    border-color: var(--teal);
-    box-shadow: 0 0 0 2px rgba(47,111,101,0.15) inset;
-  }
-  .pocket.full{
-    background: var(--teal);
-  }
+  .week-nav button:hover{ background: var(--line); }
+  .week-nav .wk-range{ font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--ink-soft); padding: 0 4px; min-width: 92px; text-align:center;}
+  .blister{ display:grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+  .pocket{ position: relative; aspect-ratio: 1 / 1.15; border-radius: 10px; background: var(--pocket-empty);
+    border: 1px solid var(--line); display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap: 3px; cursor:pointer; transition: background .2s ease, border-color .2s ease; }
+  .pocket .dname{ font-family:'IBM Plex Mono', monospace; font-size: 10px; color: var(--ink-soft); text-transform: uppercase; }
+  .pocket .dnum{ font-family:'Space Grotesk', sans-serif; font-weight: 600; font-size: 14px; color: var(--ink); }
+  .pocket.today{ box-shadow: 0 0 0 2px rgba(47,111,101,0.18) inset; }
+  .pocket.selected{ border-color: var(--teal); border-width: 2px; }
+  .pocket.full{ background: var(--teal); }
   .pocket.full .dname, .pocket.full .dnum{ color: #eaf3f0; }
-  .pocket.partial{
-    background: linear-gradient(180deg, var(--teal) var(--pct,50%), var(--pocket-empty) var(--pct,50%));
-  }
+  .pocket.partial{ background: linear-gradient(180deg, var(--teal) var(--pct,50%), var(--pocket-empty) var(--pct,50%)); }
+  .pocket.future{ opacity: 0.55; }
+
+  /* ---- Viewing date banner ---- */
+  .view-banner{ display:flex; align-items:center; justify-content:space-between; gap: 10px;
+    padding: 2px 4px 14px; }
+  .view-banner .vb-text{ font-size: 13.5px; color: var(--ink-soft); }
+  .view-banner .vb-text b{ color: var(--ink); font-weight:600; }
+  .vb-today-btn{ font-family:'IBM Plex Mono', monospace; font-size: 11px; background:none; border:1px solid var(--line);
+    color: var(--teal); padding: 5px 9px; border-radius: 8px; cursor:pointer; }
 
   /* ---- workout toggle ---- */
-  .toggle-row{
-    display:flex; align-items:center; justify-content:space-between;
-    background: var(--card);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 14px 16px;
-    margin-bottom: 20px;
-  }
+  .toggle-row{ display:flex; align-items:center; justify-content:space-between; background: var(--card);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; margin-bottom: 18px; }
   .toggle-row .t-label{ font-weight:600; font-size:14.5px; }
   .toggle-row .t-sub{ font-size:12.5px; color:var(--ink-soft); margin-top:2px; }
-  .switch{
-    position: relative; width:46px; height:26px; flex:0 0 auto;
-    border-radius: 20px; background: var(--pocket-empty); border:1px solid var(--line);
-    cursor:pointer; transition: background .2s ease;
-  }
-  .switch .knob{
-    position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%;
-    background:#fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: transform .2s ease;
-  }
+  .switch{ position: relative; width:46px; height:26px; flex:0 0 auto; border-radius: 20px;
+    background: var(--pocket-empty); border:1px solid var(--line); cursor:pointer; transition: background .2s ease; }
+  .switch .knob{ position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%;
+    background:#fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: transform .2s ease; }
   .switch.on{ background: var(--amber); border-color: var(--amber); }
   .switch.on .knob{ transform: translateX(20px); }
 
   /* ---- Sections ---- */
-  .section{
-    margin-bottom: 18px;
-  }
-  .section-head{
-    display:flex; align-items:baseline; gap:8px;
-    margin: 0 2px 8px;
-  }
-  .section-head .icon{
-    font-family:'IBM Plex Mono', monospace;
-    font-size: 12px; color: var(--teal); font-weight:500;
-  }
-  .section-head h2{
-    font-family:'Space Grotesk', sans-serif;
-    font-size: 15px; font-weight:600; margin:0;
-  }
-  .card-list{
-    background: var(--card);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    overflow: hidden;
-  }
-  .item{
-    display:flex; align-items:flex-start; gap: 12px;
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--line);
-  }
+  .section{ margin-bottom: 16px; }
+  .section-head{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin: 0 2px 8px; }
+  .section-head-left{ display:flex; align-items:baseline; gap:8px; }
+  .section-head .icon{ font-family:'IBM Plex Mono', monospace; font-size: 12px; color: var(--teal); font-weight:500; }
+  .section-head h2{ font-family:'Space Grotesk', sans-serif; font-size: 15px; font-weight:600; margin:0; }
+  .add-btn{ font-family:'IBM Plex Mono', monospace; font-size: 11px; background: var(--card); border: 1px dashed var(--teal);
+    color: var(--teal); padding: 4px 9px; border-radius: 8px; cursor:pointer; }
+  .card-list{ background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+
+  .item{ display:flex; align-items:flex-start; gap: 12px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
   .item:last-child{ border-bottom:none; }
   .item.disabled{ opacity: 0.42; }
-  .check{
-    flex: 0 0 auto;
-    width: 22px; height: 22px; margin-top: 1px;
-    border-radius: 50%;
-    border: 1.5px solid var(--teal);
-    background: transparent;
-    cursor: pointer;
-    display:flex; align-items:center; justify-content:center;
-    transition: background .15s ease;
-  }
+  .check{ flex: 0 0 auto; width: 22px; height: 22px; margin-top: 1px; border-radius: 50%;
+    border: 1.5px solid var(--teal); background: transparent; cursor: pointer;
+    display:flex; align-items:center; justify-content:center; transition: background .15s ease; }
   .check.checked{ background: var(--teal); }
-  .check.checked::after{
-    content:''; width:8px; height:5px; border-left:2px solid #fff; border-bottom:2px solid #fff;
-    transform: rotate(-45deg) translateY(-1px);
-  }
+  .check.checked::after{ content:''; width:8px; height:5px; border-left:2px solid #fff; border-bottom:2px solid #fff;
+    transform: rotate(-45deg) translateY(-1px); }
   .item.disabled .check{ cursor:not-allowed; border-color: var(--ink-soft); }
   .item-body{ flex:1; min-width:0; }
   .item-name{ font-weight:600; font-size: 14.5px; line-height:1.3; }
-  .item-dose{
-    font-family:'IBM Plex Mono', monospace;
-    font-size: 12px; color: var(--ink-soft); margin-top: 2px;
-  }
+  .item-dose{ font-family:'IBM Plex Mono', monospace; font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
   .item-note{ font-size: 12.5px; color: var(--ink-soft); margin-top: 3px; }
-  .pill-tag{
-    display:inline-block;
-    font-family:'IBM Plex Mono', monospace;
-    font-size: 10px; text-transform:uppercase; letter-spacing:.05em;
-    padding: 2px 7px; border-radius: 20px;
-    background: var(--amber-soft); color: var(--amber);
-    margin-top: 5px;
-  }
-  .pill-tag.danger{ background:#f3ddd8; color:var(--danger); }
+  .pill-tag{ display:inline-block; font-family:'IBM Plex Mono', monospace; font-size: 10px; text-transform:uppercase;
+    letter-spacing:.05em; padding: 2px 7px; border-radius: 20px; background: var(--amber-soft); color: var(--amber); margin-top: 5px; margin-right:5px;}
+  .pill-tag.future{ background: var(--pocket-empty); color: var(--ink-soft); }
 
-  footer{
-    margin-top: 30px;
-    text-align:center;
-    font-size: 12px;
-    color: var(--ink-soft);
-  }
+  /* ---- Edit-mode controls on each item ---- */
+  .item-controls{ display:flex; flex-direction:column; gap:4px; flex:0 0 auto; align-items:center; }
+  .ctrl-btn{ width:26px; height:26px; border-radius:7px; border:1px solid var(--line); background: var(--bg);
+    color: var(--ink-soft); font-size: 12px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .ctrl-btn:hover{ background: var(--line); }
+  .ctrl-row{ display:flex; gap:4px; }
+  .ctrl-btn.edit{ color: var(--teal); border-color: var(--teal); }
+  .ctrl-btn.del{ color: var(--danger); border-color: var(--danger); }
+
+  footer{ margin-top: 26px; text-align:center; font-size: 12px; color: var(--ink-soft); line-height:1.6; }
   footer a{ color: var(--teal); }
 
-  @media (prefers-reduced-motion: reduce){
-    *{ transition: none !important; }
+  /* ---- Modal ---- */
+  .overlay{ position: fixed; inset:0; background: rgba(20,35,30,0.45); display:none;
+    align-items:flex-end; justify-content:center; z-index: 50; padding: 0; }
+  .overlay.show{ display:flex; }
+  @media (min-width: 560px){ .overlay{ align-items:center; } }
+  .modal{ background: var(--card); width:100%; max-width: 480px; border-radius: 18px 18px 0 0;
+    padding: 20px 20px 24px; box-shadow: 0 -4px 30px rgba(0,0,0,0.2); max-height: 88vh; overflow-y:auto; }
+  @media (min-width: 560px){ .modal{ border-radius: 18px; } }
+  .modal h3{ font-family:'Space Grotesk', sans-serif; font-size: 18px; margin: 0 0 14px; }
+  .field{ margin-bottom: 12px; }
+  .field label{ display:block; font-size: 12px; color: var(--ink-soft); margin-bottom: 4px;
+    font-family:'IBM Plex Mono', monospace; text-transform:uppercase; letter-spacing:.04em; }
+  .field input[type=text], .field select, .field textarea{
+    width:100%; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--bg); font-family:'Inter', sans-serif; font-size: 14px; color: var(--ink);
   }
+  .field textarea{ resize: vertical; min-height: 44px; }
+  .field-row{ display:flex; gap:10px; }
+  .field-row .field{ flex:1; }
+  .modal-actions{ display:flex; gap:8px; margin-top: 18px; flex-wrap:wrap; }
+  .btn{ flex:1; padding: 11px 14px; border-radius: 10px; border:none; font-weight:600; font-size:14px; cursor:pointer; }
+  .btn-primary{ background: var(--teal); color:#fff; }
+  .btn-secondary{ background: var(--pocket-empty); color: var(--ink); }
+  .btn-danger{ background: var(--danger-soft); color: var(--danger); flex: 0 0 auto; }
+
+  .confirm-box p{ font-size: 14px; color: var(--ink); line-height:1.5; }
+  .confirm-box .warn-tag{ display:inline-block; font-family:'IBM Plex Mono', monospace; font-size:10px;
+    text-transform:uppercase; letter-spacing:.06em; background: var(--danger-soft); color: var(--danger);
+    padding:3px 8px; border-radius: 20px; margin-bottom: 10px; }
+
+  @media (prefers-reduced-motion: reduce){ *{ transition: none !important; } }
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <header>
-    <p class="eyebrow">Personal stack · not medical advice</p>
-    <h1>The Stack</h1>
-    <p class="subhead">Your daily, weekly, and workout-day supplements — one tap to log.</p>
+    <div>
+      <p class="eyebrow">Personal stack · not medical advice</p>
+      <h1>The Stack</h1>
+      <p class="subhead">Daily, weekly, and workout-day supplements.</p>
+    </div>
+    <button class="edit-toggle" id="editToggle">Manage cabinet</button>
   </header>
 
   <div class="strip-card">
-    <p class="strip-label">This week</p>
+    <div class="strip-top">
+      <p class="strip-label">Week</p>
+      <div class="week-nav">
+        <button id="prevWeek">‹</button>
+        <span class="wk-range" id="wkRange"></span>
+        <button id="nextWeek">›</button>
+      </div>
+    </div>
     <div class="blister" id="blister"></div>
   </div>
 
-  <div class="toggle-row">
-    <div>
-      <div class="t-label">Workout day</div>
-      <div class="t-sub">Unlocks L-Arginine + extra protein scoop</div>
+  <div id="checklistView">
+    <div class="view-banner">
+      <div class="vb-text" id="vbText"></div>
+      <button class="vb-today-btn" id="jumpToday" style="display:none;">Today</button>
     </div>
-    <div class="switch" id="workoutSwitch"><div class="knob"></div></div>
+
+    <div class="toggle-row">
+      <div>
+        <div class="t-label" id="workoutLabel">Workout day</div>
+        <div class="t-sub">Unlocks L-Arginine + protein/creatine emphasis</div>
+      </div>
+      <div class="switch" id="workoutSwitch"><div class="knob"></div></div>
+    </div>
+
+    <div class="section"><div class="section-head"><div class="section-head-left"><span class="icon">AM</span><h2>Morning</h2></div></div>
+      <div class="card-list" id="list-morning"></div></div>
+
+    <div class="section" id="section-preworkout"><div class="section-head"><div class="section-head-left"><span class="icon">PRE</span><h2>Pre-workout</h2></div></div>
+      <div class="card-list" id="list-preworkout"></div></div>
+
+    <div class="section"><div class="section-head"><div class="section-head-left"><span class="icon">POST</span><h2>Post-workout</h2></div></div>
+      <div class="card-list" id="list-postworkout"></div></div>
+
+    <div class="section"><div class="section-head"><div class="section-head-left"><span class="icon">PM</span><h2>Evening</h2></div></div>
+      <div class="card-list" id="list-evening"></div></div>
+
+    <div class="section"><div class="section-head"><div class="section-head-left"><span class="icon">WK</span><h2>Weekly</h2></div></div>
+      <div class="card-list" id="list-weekly"></div></div>
   </div>
 
-  <div class="section">
-    <div class="section-head"><span class="icon">AM</span><h2>Morning · with breakfast</h2></div>
-    <div class="card-list" id="list-morning"></div>
-  </div>
-
-  <div class="section" id="section-preworkout">
-    <div class="section-head"><span class="icon">PRE</span><h2>Pre-workout</h2></div>
-    <div class="card-list" id="list-preworkout"></div>
-  </div>
-
-  <div class="section" id="section-postworkout">
-    <div class="section-head"><span class="icon">POST</span><h2>Post-workout</h2></div>
-    <div class="card-list" id="list-postworkout"></div>
-  </div>
-
-  <div class="section">
-    <div class="section-head"><span class="icon">PM</span><h2>Evening · with dinner</h2></div>
-    <div class="card-list" id="list-evening"></div>
-  </div>
-
-  <div class="section">
-    <div class="section-head"><span class="icon">WK</span><h2>Weekly</h2></div>
-    <div class="card-list" id="list-weekly"></div>
+  <div id="cabinetView" style="display:none;">
+    <p class="subhead" style="margin: 0 0 16px;">Full cabinet — edit names, dose, schedule, or reorder with the arrows. Changes need confirmation before they save.</p>
+    <div class="section"><div class="section-head"><div class="section-head-left"><span class="icon">AM</span><h2>Morning</h2></div><button class="add-btn" data-section="morning">+ Add</button></div>
+      <div class="card-list" id="cab-morning"></div></div>
+    <div class="section"><div class="section-head"><div class="section-head-left"><span class="icon">PRE</span><h2>Pre-workout</h2></div><button class="add-btn" data-section="preworkout">+ Add</button></div>
+      <div class="card-list" id="cab-preworkout"></div></div>
+    <div class="section"><div class="section-head"><div class="section-head-left"><span class="icon">POST</span><h2>Post-workout</h2></div><button class="add-btn" data-section="postworkout">+ Add</button></div>
+      <div class="card-list" id="cab-postworkout"></div></div>
+    <div class="section"><div class="section-head"><div class="section-head-left"><span class="icon">PM</span><h2>Evening</h2></div><button class="add-btn" data-section="evening">+ Add</button></div>
+      <div class="card-list" id="cab-evening"></div></div>
+    <div class="section"><div class="section-head"><div class="section-head-left"><span class="icon">WK</span><h2>Weekly</h2></div><button class="add-btn" data-section="weekly">+ Add</button></div>
+      <div class="card-list" id="cab-weekly"></div></div>
   </div>
 
   <footer>
-    Data is stored only in this browser (localStorage). Clearing site data resets your history.<br>
-    Review this stack with a doctor before starting — especially the Vitamin D3 correction phase.
+    Data is stored only in this browser (localStorage) — nothing syncs across devices.<br>
+    Editing a name here does not change wording in your phone push notifications; update the
+    matching <code>.github/workflows/*.yml</code> file in your repo for that.<br>
+    Review this stack with a doctor periodically, especially around the Vitamin D3 phase change.
   </footer>
 
 </div>
 
+<!-- Item add/edit modal -->
+<div class="overlay" id="itemOverlay">
+  <div class="modal">
+    <h3 id="itemModalTitle">Add supplement</h3>
+    <div class="field"><label>Name</label><input type="text" id="f-name" placeholder="e.g. Magnesium Glycinate"></div>
+    <div class="field-row">
+      <div class="field"><label>Dose</label><input type="text" id="f-dose" placeholder="e.g. 1 tablet"></div>
+      <div class="field"><label>Section</label>
+        <select id="f-section">
+          <option value="morning">Morning</option>
+          <option value="preworkout">Pre-workout</option>
+          <option value="postworkout">Post-workout</option>
+          <option value="evening">Evening</option>
+          <option value="weekly">Weekly</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Frequency</label>
+        <select id="f-freq">
+          <option value="daily">Daily</option>
+          <option value="workout">Workout days only</option>
+          <option value="weekly">Specific weekday</option>
+        </select>
+      </div>
+      <div class="field" id="f-weekday-wrap">
+        <label>Day</label>
+        <select id="f-weekday">
+          <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option>
+          <option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option>
+          <option value="6">Saturday</option>
+        </select>
+      </div>
+    </div>
+    <div class="field"><label>Note (optional)</label><input type="text" id="f-note" placeholder="e.g. Take with a fatty meal"></div>
+    <div class="field"><label>Tag (optional)</label><input type="text" id="f-tag" placeholder="e.g. Phase 2"></div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="itemDeleteBtn" style="display:none;">Delete</button>
+      <button class="btn btn-secondary" id="itemCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="itemSaveBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmation modal -->
+<div class="overlay" id="confirmOverlay">
+  <div class="modal confirm-box">
+    <span class="warn-tag" id="confirmTag">Confirm change</span>
+    <h3 id="confirmTitle">Are you sure?</h3>
+    <p id="confirmBody"></p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="confirmCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="confirmYesBtn">Yes, confirm</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const SECTIONS = ['morning','preworkout','postworkout','evening','weekly'];
 
-// ---- Supplement data model ----
-// freq: 'daily' | 'workout' | {weekday: 0-6}
-const ITEMS = [
-  { id:'multivit',  name:'Multivitamin with ginseng', dose:'1 tablet', section:'morning', freq:'daily' },
-  { id:'bcomplex',  name:'B-complex with B12', dose:'1 tablet', section:'morning', freq:'daily' },
-  { id:'shilajit',  name:'Shilajit', dose:'500mg, 1 capsule', section:'morning', freq:'daily', note:'With milk or water' },
+const DEFAULT_ITEMS = [
+  { id:'multivit',  name:'Multivitamin with ginseng', dose:'1 tablet', section:'morning', freq:{type:'daily'}, order:1 },
+  { id:'bcomplex',  name:'B-complex with B12', dose:'1 tablet', section:'morning', freq:{type:'daily'}, order:2 },
+  { id:'shilajit',  name:'Shilajit', dose:'500mg, 1 capsule', section:'morning', freq:{type:'daily'}, note:'With milk or water', order:3 },
 
-  { id:'larginine', name:'L-Arginine + Proanthocyanidin', dose:'1 sachet', section:'preworkout', freq:'workout', note:'30–45 min before training' },
+  { id:'larginine', name:'L-Arginine + Proanthocyanidin', dose:'1 sachet', section:'preworkout', freq:{type:'workout'}, note:'30–45 min before training', order:1 },
 
-  { id:'protein',   name:'Protein powder', dose:'1 scoop (~24–30g)', section:'postworkout', freq:'daily', note:'Extra scoop on non-workout days only if diet falls short' },
-  { id:'creatine',  name:'Creatine monohydrate', dose:'3–5g', section:'postworkout', freq:'daily', note:'Take daily, including rest days' },
+  { id:'protein',   name:'Protein powder', dose:'1 scoop (~24–30g)', section:'postworkout', freq:{type:'daily'}, note:'Extra scoop on non-workout days only if diet falls short', order:1 },
+  { id:'creatine',  name:'Creatine monohydrate', dose:'3–5g', section:'postworkout', freq:{type:'daily'}, note:'Take daily, including rest days', order:2 },
 
-  { id:'calcium',   name:'Calcium + D3 + Magnesium + Zinc + Boron/Copper', dose:'1 tablet', section:'evening', freq:'daily' },
-  { id:'omega3',    name:'Omega-3 (EPA/DHA)', dose:'1–2 capsules', section:'evening', freq:'daily' },
-  { id:'maglycid3', name:'Maglyci-D3 (Mg Glycinate 250mg + D3 1000IU)', dose:'1 capsule', section:'evening', freq:'daily', note:'Start only after the D3 60,000 IU correction phase ends', tag:'Phase 2' },
+  { id:'calcium',   name:'Calcium + D3 + Magnesium + Zinc + Boron/Copper', dose:'1 tablet', section:'evening', freq:{type:'daily'}, order:1 },
+  { id:'omega3',    name:'Omega-3 (EPA/DHA)', dose:'1–2 capsules', section:'evening', freq:{type:'daily'}, order:2 },
+  { id:'maglycid3', name:'Maglyci-D3 (Mg Glycinate 250mg + D3 1000IU)', dose:'1 capsule', section:'evening', freq:{type:'daily'}, note:'Start only after the D3 60,000 IU correction phase ends', tag:'Phase 2', order:3 },
 
-  { id:'d3high',    name:'Vitamin D3 60,000 IU', dose:'1 dose', section:'weekly', freq:{weekday:0}, note:'Sundays · correction phase, 8–10 weeks only', tag:'Phase 1' },
-  { id:'vitc',      name:'Vitamin C 500mg (chewable)', dose:'1 tablet', section:'weekly', freq:{weekday:3}, note:'Wednesdays · topping up a fruit-based diet' },
+  { id:'d3high',    name:'Vitamin D3 60,000 IU', dose:'1 dose', section:'weekly', freq:{type:'weekly', weekday:0}, note:'Correction phase, 8–10 weeks only', tag:'Phase 1', order:1 },
+  { id:'vitc',      name:'Vitamin C 500mg (chewable)', dose:'1 tablet', section:'weekly', freq:{type:'weekly', weekday:3}, note:'Topping up a fruit-based diet', order:2 },
 ];
 
-// ---- Date / storage helpers ----
-function todayKey(d){
-  const dt = d || new Date();
-  return dt.toISOString().slice(0,10);
+// ---- Storage ----
+function loadItems(){
+  try{
+    const raw = localStorage.getItem('stack:items');
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  saveItems(DEFAULT_ITEMS);
+  return JSON.parse(JSON.stringify(DEFAULT_ITEMS));
 }
-function loadDay(key){
-  try{ return JSON.parse(localStorage.getItem('stack:'+key)) || {}; }
-  catch(e){ return {}; }
+function saveItems(items){ localStorage.setItem('stack:items', JSON.stringify(items)); }
+
+function dateKey(d){ return d.toISOString().slice(0,10); }
+function loadDay(key){ try{ return JSON.parse(localStorage.getItem('stack:'+key)) || {}; }catch(e){ return {}; } }
+function saveDay(key, data){ localStorage.setItem('stack:'+key, JSON.stringify(data)); }
+function isWorkoutDay(key){ return loadDay(key).__workout === true; }
+function setWorkoutDay(key, val){ const d = loadDay(key); d.__workout = val; saveDay(key, d); }
+function isChecked(key, id){ return !!loadDay(key)[id]; }
+function setChecked(key, id, val){ const d = loadDay(key); d[id] = val; saveDay(key, d); }
+
+// ---- App state ----
+let ITEMS = loadItems();
+let viewingDate = new Date();
+let weekStart = mondayOf(new Date());
+let editMode = false;
+
+function mondayOf(d){
+  const dt = new Date(d);
+  dt.setHours(0,0,0,0);
+  dt.setDate(dt.getDate() - ((dt.getDay()+6)%7));
+  return dt;
 }
-function saveDay(key, data){
-  localStorage.setItem('stack:'+key, JSON.stringify(data));
+function sameDay(a,b){ return dateKey(a) === dateKey(b); }
+function fmtDate(d){ return d.toLocaleDateString('en-IN', {weekday:'long', day:'numeric', month:'short'}); }
+
+function isActiveForDate(item, date){
+  const wd = date.getDay();
+  const workout = isWorkoutDay(dateKey(date));
+  if(item.freq.type === 'daily') return true;
+  if(item.freq.type === 'workout') return workout;
+  if(item.freq.type === 'weekly') return item.freq.weekday === wd;
+  return false;
 }
-function isWorkoutDay(key){
-  return loadDay(key).__workout === true;
-}
-function setWorkoutDay(key, val){
-  const d = loadDay(key); d.__workout = val; saveDay(key, d);
-}
-function isChecked(key, id){
-  return !!loadDay(key)[id];
-}
-function setChecked(key, id, val){
-  const d = loadDay(key); d[id] = val; saveDay(key, d);
+function itemsForSection(section){
+  return ITEMS.filter(it=>it.section===section).sort((a,b)=>a.order-b.order);
 }
 
-// items scheduled for a given JS Date
-function itemsForDate(dt){
-  const wd = dt.getDay();
-  const workout = isWorkoutDay(todayKey(dt));
-  return ITEMS.filter(it=>{
-    if(it.freq === 'daily') return true;
-    if(it.freq === 'workout') return workout;
-    if(typeof it.freq === 'object') return it.freq.weekday === wd;
-    return false;
-  });
-}
-
-// ---- Render blister strip (Mon–Sun of current week) ----
+// ---- Render: week strip ----
 function renderBlister(){
   const el = document.getElementById('blister');
   el.innerHTML = '';
-  const now = new Date();
-  const curDow = now.getDay();
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - ((curDow + 6) % 7)); // week starts Monday
-
+  const today = new Date(); today.setHours(0,0,0,0);
   for(let i=0;i<7;i++){
-    const d = new Date(monday);
-    d.setDate(monday.getDate()+i);
-    const key = todayKey(d);
-    const scheduled = itemsForDate(d);
+    const d = new Date(weekStart); d.setDate(weekStart.getDate()+i);
+    const key = dateKey(d);
+    const scheduled = ITEMS.filter(it=>isActiveForDate(it, d));
     const dayData = loadDay(key);
     const doneCount = scheduled.filter(it=>dayData[it.id]).length;
     const total = scheduled.length;
     const pct = total ? Math.round((doneCount/total)*100) : 0;
+    const isFuture = d > today;
 
     const pocket = document.createElement('div');
     pocket.className = 'pocket';
-    if(key === todayKey()) pocket.classList.add('today');
-    if(total>0 && doneCount===total) pocket.classList.add('full');
-    else if(doneCount>0){ pocket.classList.add('partial'); pocket.style.setProperty('--pct', pct+'%'); }
+    if(sameDay(d, today)) pocket.classList.add('today');
+    if(sameDay(d, viewingDate)) pocket.classList.add('selected');
+    if(isFuture) pocket.classList.add('future');
+    if(total>0 && doneCount===total && !isFuture) pocket.classList.add('full');
+    else if(doneCount>0 && !isFuture){ pocket.classList.add('partial'); pocket.style.setProperty('--pct', pct+'%'); }
 
     pocket.innerHTML = `<div class="dname">${DAY_NAMES[d.getDay()]}</div><div class="dnum">${d.getDate()}</div>`;
+    pocket.dataset.date = key;
     el.appendChild(pocket);
   }
+  const wkEnd = new Date(weekStart); wkEnd.setDate(weekStart.getDate()+6);
+  document.getElementById('wkRange').textContent =
+    weekStart.toLocaleDateString('en-IN',{day:'numeric',month:'short'}) + ' – ' + wkEnd.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
 }
 
-// ---- Render a section list ----
-function renderSection(sectionId, containerId){
-  const container = document.getElementById(containerId);
-  container.innerHTML = '';
-  const key = todayKey();
+// ---- Render: checklist for viewingDate ----
+function renderChecklist(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const vd = new Date(viewingDate); vd.setHours(0,0,0,0);
+  const key = dateKey(vd);
+  const isToday = sameDay(vd, today);
+  const isFuture = vd > today;
+
+  const vbText = document.getElementById('vbText');
+  vbText.innerHTML = isToday
+    ? `Viewing <b>Today</b> — ${fmtDate(vd)}`
+    : `Viewing <b>${isFuture ? 'upcoming' : 'past'} day</b> — ${fmtDate(vd)}`;
+  document.getElementById('jumpToday').style.display = isToday ? 'none' : 'inline-block';
+
+  document.getElementById('workoutLabel').textContent = isFuture ? 'Planned workout day' : 'Workout day';
+  const sw = document.getElementById('workoutSwitch');
+  sw.classList.toggle('on', isWorkoutDay(key));
+
   const workout = isWorkoutDay(key);
-  const now = new Date();
-  const wd = now.getDay();
+  ['morning','preworkout','postworkout','evening','weekly'].forEach(section=>{
+    const container = document.getElementById('list-'+section);
+    container.innerHTML = '';
+    const items = itemsForSection(section);
+    let rendered = 0;
+    items.forEach(it=>{
+      const active = isActiveForDate(it, vd);
+      if(it.freq.type==='workout' && !workout) return; // hide entirely if not a workout day
+      rendered++;
+      const checked = active && !isFuture && isChecked(key, it.id);
+      const canCheck = active && !isFuture;
 
-  const items = ITEMS.filter(it => it.section === sectionId);
-  let anyRendered = false;
-
-  items.forEach(it=>{
-    let active = false;
-    if(it.freq === 'daily') active = true;
-    else if(it.freq === 'workout') active = workout;
-    else if(typeof it.freq === 'object') active = it.freq.weekday === wd;
-
-    // hide pre/post-workout sections entirely if not a workout day and item is workout-only
-    if(it.freq === 'workout' && !workout) return;
-
-    anyRendered = true;
-    const checked = active && isChecked(key, it.id);
-
-    const row = document.createElement('div');
-    row.className = 'item' + (active ? '' : ' disabled');
-    row.innerHTML = `
-      <div class="check ${checked?'checked':''}" data-id="${it.id}" data-active="${active}"></div>
-      <div class="item-body">
-        <div class="item-name">${it.name}</div>
-        <div class="item-dose">${it.dose}</div>
-        ${it.note ? `<div class="item-note">${it.note}</div>` : ''}
-        ${it.tag ? `<span class="pill-tag ${it.tag==='Phase 1'?'':''}">${it.tag}</span>` : ''}
-        ${!active && it.freq!=='workout' ? `<span class="pill-tag">Not scheduled today</span>` : ''}
-      </div>
-    `;
-    container.appendChild(row);
+      const row = document.createElement('div');
+      row.className = 'item' + (canCheck ? '' : ' disabled');
+      row.innerHTML = `
+        <div class="check ${checked?'checked':''}" data-id="${it.id}" data-active="${canCheck}"></div>
+        <div class="item-body">
+          <div class="item-name">${escapeHtml(it.name)}</div>
+          <div class="item-dose">${escapeHtml(it.dose||'')}</div>
+          ${it.note ? `<div class="item-note">${escapeHtml(it.note)}</div>` : ''}
+          ${it.tag ? `<span class="pill-tag">${escapeHtml(it.tag)}</span>` : ''}
+          ${isFuture && active ? `<span class="pill-tag future">Upcoming — can't log yet</span>` : ''}
+          ${!active && it.freq.type!=='workout' ? `<span class="pill-tag future">Not scheduled this day</span>` : ''}
+        </div>`;
+      container.appendChild(row);
+    });
+    const sectionEl = container.closest('.section');
+    if(section==='preworkout') sectionEl.style.display = workout ? '' : 'none';
+    else sectionEl.style.display = rendered ? '' : 'none';
   });
+}
 
-  // toggle whole section visibility for workout-only sections when not a workout day
-  const sectionEl = container.closest('.section');
-  if(sectionId === 'preworkout' || sectionId === 'postworkout'){
-    // postworkout has daily items too (protein/creatine), so only hide preworkout fully
-    if(sectionId === 'preworkout'){
-      sectionEl.style.display = workout ? '' : 'none';
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---- Render: cabinet (manage/edit) view ----
+function renderCabinet(){
+  SECTIONS.forEach(section=>{
+    const container = document.getElementById('cab-'+section);
+    container.innerHTML = '';
+    const items = itemsForSection(section);
+    if(items.length===0){
+      container.innerHTML = `<div class="item"><div class="item-body item-note">No items yet in this section.</div></div>`;
+      return;
     }
-  }
+    items.forEach((it, idx)=>{
+      const row = document.createElement('div');
+      row.className = 'item';
+      const freqLabel = it.freq.type==='daily' ? 'Daily'
+        : it.freq.type==='workout' ? 'Workout days'
+        : 'Weekly · ' + DAY_NAMES[it.freq.weekday];
+      row.innerHTML = `
+        <div class="item-controls">
+          <div class="ctrl-row">
+            <button class="ctrl-btn" data-act="up" data-id="${it.id}" ${idx===0?'disabled':''}>↑</button>
+            <button class="ctrl-btn" data-act="down" data-id="${it.id}" ${idx===items.length-1?'disabled':''}>↓</button>
+          </div>
+          <div class="ctrl-row">
+            <button class="ctrl-btn edit" data-act="edit" data-id="${it.id}">✎</button>
+            <button class="ctrl-btn del" data-act="del" data-id="${it.id}">🗑</button>
+          </div>
+        </div>
+        <div class="item-body">
+          <div class="item-name">${escapeHtml(it.name)}</div>
+          <div class="item-dose">${escapeHtml(it.dose||'')} · ${freqLabel}</div>
+          ${it.note ? `<div class="item-note">${escapeHtml(it.note)}</div>` : ''}
+          ${it.tag ? `<span class="pill-tag">${escapeHtml(it.tag)}</span>` : ''}
+        </div>`;
+      container.appendChild(row);
+    });
+  });
 }
 
 function renderAll(){
   renderBlister();
-  renderSection('morning','list-morning');
-  renderSection('preworkout','list-preworkout');
-  renderSection('postworkout','list-postworkout');
-  renderSection('evening','list-evening');
-  renderSection('weekly','list-weekly');
-
-  const sw = document.getElementById('workoutSwitch');
-  sw.classList.toggle('on', isWorkoutDay(todayKey()));
+  if(editMode) renderCabinet(); else renderChecklist();
 }
 
-// ---- Event delegation for checkboxes ----
+// ---- Confirmation modal helper ----
+function askConfirm(title, body, tag, onYes){
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmBody').textContent = body;
+  document.getElementById('confirmTag').textContent = tag || 'Confirm change';
+  const overlay = document.getElementById('confirmOverlay');
+  overlay.classList.add('show');
+  const yesBtn = document.getElementById('confirmYesBtn');
+  const cancelBtn = document.getElementById('confirmCancelBtn');
+  function cleanup(){ overlay.classList.remove('show'); yesBtn.onclick=null; cancelBtn.onclick=null; }
+  yesBtn.onclick = ()=>{ cleanup(); onYes(); };
+  cancelBtn.onclick = cleanup;
+}
+
+// ---- Item modal (add/edit) ----
+let modalMode = 'add'; // 'add' | 'edit'
+let modalEditingId = null;
+
+function openItemModal(mode, item, defaultSection){
+  modalMode = mode;
+  modalEditingId = item ? item.id : null;
+  document.getElementById('itemModalTitle').textContent = mode==='add' ? 'Add supplement' : 'Edit supplement';
+  document.getElementById('f-name').value = item ? item.name : '';
+  document.getElementById('f-dose').value = item ? (item.dose||'') : '';
+  document.getElementById('f-section').value = item ? item.section : (defaultSection||'morning');
+  document.getElementById('f-freq').value = item ? item.freq.type : 'daily';
+  document.getElementById('f-weekday').value = item && item.freq.type==='weekly' ? item.freq.weekday : 0;
+  document.getElementById('f-note').value = item ? (item.note||'') : '';
+  document.getElementById('f-tag').value = item ? (item.tag||'') : '';
+  document.getElementById('itemDeleteBtn').style.display = mode==='edit' ? 'inline-block' : 'none';
+  toggleWeekdayField();
+  document.getElementById('itemOverlay').classList.add('show');
+}
+function closeItemModal(){ document.getElementById('itemOverlay').classList.remove('show'); }
+function toggleWeekdayField(){
+  document.getElementById('f-weekday-wrap').style.display =
+    document.getElementById('f-freq').value === 'weekly' ? '' : 'none';
+}
+
+document.getElementById('f-freq').addEventListener('change', toggleWeekdayField);
+document.getElementById('itemCancelBtn').addEventListener('click', closeItemModal);
+
+document.getElementById('itemSaveBtn').addEventListener('click', ()=>{
+  const name = document.getElementById('f-name').value.trim();
+  if(!name){ alert('Name is required.'); return; }
+  const dose = document.getElementById('f-dose').value.trim();
+  const section = document.getElementById('f-section').value;
+  const freqType = document.getElementById('f-freq').value;
+  const weekday = parseInt(document.getElementById('f-weekday').value, 10);
+  const note = document.getElementById('f-note').value.trim();
+  const tag = document.getElementById('f-tag').value.trim();
+  const freq = freqType==='weekly' ? {type:'weekly', weekday} : {type: freqType};
+
+  const verb = modalMode==='add' ? 'add' : 'save changes to';
+  askConfirm(
+    modalMode==='add' ? 'Add this supplement?' : 'Confirm this change?',
+    `Are you sure you want to ${verb} "${name}"? This updates your cabinet immediately.`,
+    modalMode==='add' ? 'New item' : 'Edit item',
+    ()=>{
+      if(modalMode==='add'){
+        const id = 'item-' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+        const existingInSection = itemsForSection(section);
+        const order = existingInSection.length ? Math.max(...existingInSection.map(i=>i.order))+1 : 1;
+        ITEMS.push({ id, name, dose, section, freq, note, tag, order });
+      } else {
+        const it = ITEMS.find(i=>i.id===modalEditingId);
+        if(it){
+          const sectionChanged = it.section !== section;
+          Object.assign(it, { name, dose, section, freq, note, tag });
+          if(sectionChanged){
+            const existingInSection = itemsForSection(section).filter(i=>i.id!==it.id);
+            it.order = existingInSection.length ? Math.max(...existingInSection.map(i=>i.order))+1 : 1;
+          }
+        }
+      }
+      saveItems(ITEMS);
+      closeItemModal();
+      renderAll();
+    }
+  );
+});
+
+document.getElementById('itemDeleteBtn').addEventListener('click', ()=>{
+  const it = ITEMS.find(i=>i.id===modalEditingId);
+  if(!it) return;
+  askConfirm(
+    'Delete this supplement?',
+    `Are you sure you want to remove "${it.name}" from your cabinet? Past logged history for it is kept but won't show anywhere.`,
+    'Delete',
+    ()=>{
+      ITEMS = ITEMS.filter(i=>i.id!==modalEditingId);
+      saveItems(ITEMS);
+      closeItemModal();
+      renderAll();
+    }
+  );
+});
+
+// ---- Event delegation ----
 document.body.addEventListener('click', (e)=>{
+  // checklist checkbox
   const check = e.target.closest('.check');
-  if(check){
+  if(check && !editMode){
     if(check.dataset.active !== 'true') return;
     const id = check.dataset.id;
-    const key = todayKey();
-    const newVal = !isChecked(key, id);
-    setChecked(key, id, newVal);
+    const key = dateKey(viewingDate);
+    setChecked(key, id, !isChecked(key, id));
     renderAll();
     return;
   }
+
+  // workout switch
   const sw = e.target.closest('#workoutSwitch');
   if(sw){
-    const key = todayKey();
+    const key = dateKey(viewingDate);
     setWorkoutDay(key, !isWorkoutDay(key));
     renderAll();
+    return;
+  }
+
+  // week nav
+  if(e.target.closest('#prevWeek')){ weekStart.setDate(weekStart.getDate()-7); renderAll(); return; }
+  if(e.target.closest('#nextWeek')){ weekStart.setDate(weekStart.getDate()+7); renderAll(); return; }
+
+  // pocket click -> set viewing date
+  const pocket = e.target.closest('.pocket');
+  if(pocket){
+    viewingDate = new Date(pocket.dataset.date + 'T00:00:00');
+    renderAll();
+    return;
+  }
+
+  // jump to today
+  if(e.target.closest('#jumpToday')){
+    viewingDate = new Date();
+    weekStart = mondayOf(viewingDate);
+    renderAll();
+    return;
+  }
+
+  // edit mode toggle
+  if(e.target.closest('#editToggle')){
+    editMode = !editMode;
+    document.getElementById('editToggle').classList.toggle('active', editMode);
+    document.getElementById('editToggle').textContent = editMode ? 'Done editing' : 'Manage cabinet';
+    document.getElementById('checklistView').style.display = editMode ? 'none' : '';
+    document.getElementById('cabinetView').style.display = editMode ? '' : 'none';
+    renderAll();
+    return;
+  }
+
+  // add button per section
+  const addBtn = e.target.closest('.add-btn');
+  if(addBtn){ openItemModal('add', null, addBtn.dataset.section); return; }
+
+  // cabinet item controls
+  const ctrl = e.target.closest('.ctrl-btn');
+  if(ctrl){
+    const id = ctrl.dataset.id;
+    const act = ctrl.dataset.act;
+    const it = ITEMS.find(i=>i.id===id);
+    if(!it) return;
+    if(act==='edit'){ openItemModal('edit', it); return; }
+    if(act==='del'){
+      askConfirm('Delete this supplement?',
+        `Are you sure you want to remove "${it.name}" from your cabinet?`,
+        'Delete',
+        ()=>{ ITEMS = ITEMS.filter(i=>i.id!==id); saveItems(ITEMS); renderAll(); });
+      return;
+    }
+    if(act==='up' || act==='down'){
+      const list = itemsForSection(it.section);
+      const idx = list.findIndex(i=>i.id===id);
+      const swapIdx = act==='up' ? idx-1 : idx+1;
+      if(swapIdx<0 || swapIdx>=list.length) return;
+      const other = list[swapIdx];
+      const tmp = it.order; it.order = other.order; other.order = tmp;
+      saveItems(ITEMS);
+      renderAll();
+      return;
+    }
   }
 });
 
