@@ -642,9 +642,9 @@
     "multivit": true,
     "bcomplex": true,
     "shilajit": true,
-    "calcium": true,
-    "omega3": true,
-    "maglycid3": true,
+    "calcium": false,
+    "omega3": false,
+    "maglycid3": false,
     "creatine": true,
     "__workout": true,
     "larginine": true
