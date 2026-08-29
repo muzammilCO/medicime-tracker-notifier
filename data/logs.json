@@ -647,6 +647,8 @@
     "maglycid3": false,
     "creatine": true,
     "__workout": true,
-    "larginine": true
+    "larginine": true,
+    "__sent_evening": true,
+    "__sent_workout_post": true
   }
 }
