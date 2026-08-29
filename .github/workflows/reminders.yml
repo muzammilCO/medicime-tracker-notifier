@@ -22,7 +22,7 @@ name: Reminders (dynamic, IST)
 
 on:
   schedule:
-    - cron: '*/37 * * * *'
+    - cron: '37 * * * *'
   workflow_dispatch:
     inputs:
       force:
