@@ -48,7 +48,7 @@ jobs:
           set -e
 
           # A reminder can still fire this many minutes after its target time.
-          WINDOW_MIN=90
+          WINDOW_MIN=250
 
           IST_TIME=$(TZ='Asia/Kolkata' date +%H:%M)
           IST_DATE=$(TZ='Asia/Kolkata' date +%F)
