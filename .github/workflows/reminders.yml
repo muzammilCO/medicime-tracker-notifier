@@ -1,24 +1,19 @@
 name: Reminders (dynamic, IST)
 
-# One workflow handles every notification. It runs every 5 minutes, reads
-# your notification times straight from data/schedule.json (in IST, no UTC
-# math needed) and your supplement list from data/items.json, and sends only
-# the notification(s) whose scheduled time matches right now.
+# Cloudflare Worker is now responsible for triggering this workflow.
+# GitHub Actions does NOT use its own schedule.
 #
-# GitHub does NOT guarantee scheduled workflows run at the exact minute —
-# they can be delayed, especially during high-load periods, and an exact-
-# minute match can get silently skipped. So instead of requiring an exact
-# match, each reminder is "due" for up to WINDOW_MIN minutes after its
-# target time, and a "sent" marker (stored in data/logs.json, same file your
-# check-off history lives in) stops it firing twice if GitHub runs this
-# workflow more than once inside that window.
+# Cloudflare triggers this workflow every 5 minutes using workflow_dispatch.
 #
-# Change WHEN something fires -> edit data/schedule.json (times are IST).
-# Change WHAT it says          -> edit data/items.json (or use the app's
-#                                  Manage Cabinet / Sync settings screens,
-#                                  which sync here automatically once you've
-#                                  connected the sync Worker — see README).
-# Neither requires touching this file.
+# This workflow:
+#   - reads reminder times from data/schedule.json (IST)
+#   - reads reminder contents from data/items.json
+#   - allows reminders to fire up to WINDOW_MIN minutes after their target
+#   - stores sent markers in data/logs.json
+#   - sends notifications through ntfy.sh
+#
+# Change WHEN something fires -> edit data/schedule.json
+# Change WHAT it says        -> edit data/items.json
 
 on:
   workflow_dispatch:
@@ -28,141 +23,409 @@ on:
         type: boolean
         default: false
 
+# Prevent two reminder runs from modifying logs.json at the same time.
+concurrency:
+  group: reminder-run
+  cancel-in-progress: false
+
 permissions:
-  contents: write   # needed to commit the "sent" markers back to data/logs.json
+  contents: write
 
 jobs:
   notify:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Check schedule and send due notifications
         env:
-          FORCE: ${{ github.event.inputs.force }}
+          FORCE: ${{ inputs.force }}
           BRANCH: ${{ github.ref_name }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           set -e
-          WINDOW_MIN=200   # how many minutes late a run is still allowed to fire, once
+
+          # A reminder can still fire this many minutes after its target time.
+          WINDOW_MIN=90
 
           IST_TIME=$(TZ='Asia/Kolkata' date +%H:%M)
           IST_DATE=$(TZ='Asia/Kolkata' date +%F)
-          IST_WEEKDAY=$(TZ='Asia/Kolkata' date +%w)   # 0 = Sunday ... 6 = Saturday
-          echo "IST now: $IST_DATE $IST_TIME (weekday $IST_WEEKDAY)"
+          IST_WEEKDAY=$(TZ='Asia/Kolkata' date +%w)
+
+          echo "=========================================="
+          echo "Reminder workflow"
+          echo "IST now: $IST_DATE $IST_TIME"
+          echo "IST weekday: $IST_WEEKDAY"
+          echo "Window: ${WINDOW_MIN} minutes"
+          echo "Force: ${FORCE:-false}"
+          echo "=========================================="
 
           CHANGED=false
 
+          # ------------------------------------------------------------
+          # Convert HH:MM to minutes since midnight
+          # ------------------------------------------------------------
           to_minutes() {
-            local h=${1%%:*} m=${1##*:}
+            local h=${1%%:*}
+            local m=${1##*:}
             echo $((10#$h * 60 + 10#$m))
           }
+
           CUR_MIN=$(to_minutes "$IST_TIME")
 
+          # ------------------------------------------------------------
+          # Check whether a daily/workout schedule is currently due
+          # ------------------------------------------------------------
           due_window() {
-            # $1 = schedule.json key. True if now is at or after the target
-            # time and within WINDOW_MIN minutes of it.
+            local key="$1"
             local target
-            target=$(jq -r --arg k "$1" '.[$k] // empty' data/schedule.json)
+            local target_min
+            local diff
+
+            target=$(jq -r --arg k "$key" '.[$k] // empty' data/schedule.json)
+
             [ -z "$target" ] && return 1
-            local target_min diff
+
             target_min=$(to_minutes "$target")
             diff=$((CUR_MIN - target_min))
+
+            echo "Checking $key: target=$target diff=${diff}min"
+
             [ "$diff" -ge 0 ] && [ "$diff" -le "$WINDOW_MIN" ]
           }
 
+          # ------------------------------------------------------------
+          # Check whether a notification was already sent today
+          # ------------------------------------------------------------
           already_sent() {
-            jq -e --arg d "$IST_DATE" --arg k "__sent_$1" '.[$d][$k] == true' data/logs.json >/dev/null 2>&1
+            local marker="$1"
+
+            jq -e \
+              --arg d "$IST_DATE" \
+              --arg k "__sent_$marker" \
+              '.[$d][$k] == true' \
+              data/logs.json >/dev/null 2>&1
           }
+
+          # ------------------------------------------------------------
+          # Mark notification as sent
+          # ------------------------------------------------------------
           mark_sent() {
+            local marker="$1"
             local tmp
-            tmp=$(jq --arg d "$IST_DATE" --arg k "__sent_$1" '.[$d][$k] = true' data/logs.json)
+
+            tmp=$(jq \
+              --arg d "$IST_DATE" \
+              --arg k "__sent_$marker" \
+              '.[$d][$k] = true' \
+              data/logs.json)
+
             echo "$tmp" > data/logs.json
             CHANGED=true
+
+            echo "Marked sent: $marker"
           }
 
+          # ------------------------------------------------------------
+          # Send a daily section
+          # ------------------------------------------------------------
           send_daily_section() {
-            # $1 = section name in items.json, $2 = notification title
-            BODY=$(jq -r --arg s "$1" '
-              [.[] | select(.section==$s and .freq.type=="daily")]
-              | sort_by(.order) | map("• " + .name + " — " + .dose) | join("\n")
-            ' data/items.json)
-            [ -z "$BODY" ] && { echo "Nothing scheduled for $1, skipping."; return; }
-            curl -s -H "Title: $2" -H "Tags: pill" -d "$BODY" "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}"
-          }
+            local section="$1"
+            local title="$2"
+            local body
 
-          send_weekday() {
-            # $1 = weekday number (0=Sun..6=Sat), $2 = notification title
-            BODY=$(jq -r --argjson w "$1" '
-              [.[] | select(.freq.type=="weekly" and .freq.weekday==$w)]
+            body=$(jq -r --arg s "$section" '
+              [.[] |
+                select(
+                  .section == $s and
+                  .freq.type == "daily"
+                )
+              ]
               | sort_by(.order)
-              | map("• " + .name + " — " + .dose + (if .note then " (" + .note + ")" else "" end))
+              | map(
+                  "• " + .name + " — " + .dose +
+                  (if .note then " (" + .note + ")" else "" end)
+                )
               | join("\n")
             ' data/items.json)
-            [ -z "$BODY" ] && { echo "Nothing scheduled for weekday $1, skipping."; return; }
-            curl -s -H "Title: $2" -H "Priority: high" -H "Tags: calendar,pill" -d "$BODY" "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}"
+
+            if [ -z "$body" ]; then
+              echo "Nothing scheduled for $section, skipping."
+              return 0
+            fi
+
+            echo "Sending: $title"
+            echo "$body"
+
+            curl -fsS \
+              -H "Title: $title" \
+              -H "Tags: pill" \
+              -d "$body" \
+              "https://ntfy.sh/${NTFY_TOPIC}"
+
+            echo "Notification sent successfully: $title"
           }
 
+          # ------------------------------------------------------------
+          # Send workout section
+          # ------------------------------------------------------------
           send_workout_section() {
-            # $1 = section name (preworkout/postworkout), $2 = notification title
-            BODY=$(jq -r --arg s "$1" '
-              [.[] | select(.section==$s)]
-              | sort_by(.order) | map("• " + .name + " — " + .dose) | join("\n")
+            local section="$1"
+            local title="$2"
+            local body
+
+            body=$(jq -r --arg s "$section" '
+              [.[] |
+                select(.section == $s)
+              ]
+              | sort_by(.order)
+              | map(
+                  "• " + .name + " — " + .dose +
+                  (if .note then " (" + .note + ")" else "" end)
+                )
+              | join("\n")
             ' data/items.json)
-            [ -z "$BODY" ] && { echo "Nothing scheduled for $1, skipping."; return; }
-            curl -s -H "Title: $2" -H "Tags: muscle" -d "$BODY" "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}"
+
+            if [ -z "$body" ]; then
+              echo "Nothing scheduled for $section, skipping."
+              return 0
+            fi
+
+            echo "Sending: $title"
+            echo "$body"
+
+            curl -fsS \
+              -H "Title: $title" \
+              -H "Tags: muscle" \
+              -d "$body" \
+              "https://ntfy.sh/${NTFY_TOPIC}"
+
+            echo "Notification sent successfully: $title"
           }
 
-          DAY_NAMES=(Sunday Monday Tuesday Wednesday Thursday Friday Saturday)
+          # ------------------------------------------------------------
+          # Send one weekly weekday + slot
+          #
+          # Example:
+          # Sunday + morning
+          # Wednesday + morning
+          # ------------------------------------------------------------
+          send_weekly_slot() {
+            local weekday="$1"
+            local slot="$2"
+            local title="$3"
+            local body
 
-          # ---- Daily / workout reminders ----
-          if [ "$FORCE" = "true" ] || { due_window morning && ! already_sent morning; }; then
+            body=$(jq -r \
+              --argjson w "$weekday" \
+              --arg s "$slot" '
+                [.[] |
+                  select(
+                    .freq.type == "weekly" and
+                    .freq.weekday == $w and
+                    .freq.slot == $s
+                  )
+                ]
+                | sort_by(.order)
+                | map(
+                    "• " + .name + " — " + .dose +
+                    (if .note then " (" + .note + ")" else "" end)
+                  )
+                | join("\n")
+              ' data/items.json)
+
+            if [ -z "$body" ]; then
+              echo "No weekly items for weekday=$weekday slot=$slot"
+              return 0
+            fi
+
+            echo "Sending: $title"
+            echo "$body"
+
+            curl -fsS \
+              -H "Title: $title" \
+              -H "Priority: high" \
+              -H "Tags: calendar,pill" \
+              -d "$body" \
+              "https://ntfy.sh/${NTFY_TOPIC}"
+
+            echo "Notification sent successfully: $title"
+          }
+
+          DAY_NAMES=(
+            Sunday
+            Monday
+            Tuesday
+            Wednesday
+            Thursday
+            Friday
+            Saturday
+          )
+
+          # ============================================================
+          # DAILY / WORKOUT REMINDERS
+          # ============================================================
+
+          if [ "$FORCE" = "true" ] || \
+             { due_window morning && ! already_sent morning; }; then
+
             send_daily_section morning "Morning stack"
-            [ "$FORCE" != "true" ] && mark_sent morning
-          fi
-          if [ "$FORCE" = "true" ] || { due_window evening && ! already_sent evening; }; then
-            send_daily_section evening "Evening stack"
-            [ "$FORCE" != "true" ] && mark_sent evening
-          fi
-          if [ "$FORCE" = "true" ] || { due_window workout_pre && ! already_sent workout_pre; }; then
-            send_workout_section preworkout "Pre-workout"
-            [ "$FORCE" != "true" ] && mark_sent workout_pre
-          fi
-          if [ "$FORCE" = "true" ] || { due_window workout_post && ! already_sent workout_post; }; then
-            send_workout_section postworkout "Post-workout"
-            [ "$FORCE" != "true" ] && mark_sent workout_post
-          fi
 
-          # ---- Weekly reminder ----
-          if [ "$FORCE" = "true" ]; then
-            # Test mode: send the weekly notification for every weekday that
-            # has a configured time, regardless of what day it actually is.
-            # Doesn't touch the "sent" markers.
-            for WD in $(jq -r '.weekly // {} | keys[]' data/schedule.json); do
-              send_weekday "$WD" "Weekly dose - ${DAY_NAMES[$WD]} (test)"
-            done
-          else
-            WEEKLY_TARGET=$(jq -r --arg wd "$IST_WEEKDAY" '.weekly[$wd] // empty' data/schedule.json)
-            if [ -n "$WEEKLY_TARGET" ]; then
-              WEEKLY_TARGET_MIN=$(to_minutes "$WEEKLY_TARGET")
-              WEEKLY_DIFF=$((CUR_MIN - WEEKLY_TARGET_MIN))
-              if [ "$WEEKLY_DIFF" -ge 0 ] && [ "$WEEKLY_DIFF" -le "$WINDOW_MIN" ] && ! already_sent weekly; then
-                send_weekday "$IST_WEEKDAY" "Weekly dose - ${DAY_NAMES[$IST_WEEKDAY]}"
-                mark_sent weekly
-              fi
+            if [ "$FORCE" != "true" ]; then
+              mark_sent morning
             fi
           fi
 
-          # ---- Commit "sent" markers so a delayed re-run doesn't duplicate ----
-          if [ "$CHANGED" = "true" ]; then
-            git config user.name "supplement-tracker-bot"
-            git config user.email "actions@users.noreply.github.com"
-            git add data/logs.json
-            git commit -m "Mark reminders sent for $IST_DATE" || true
-            for i in 1 2 3; do
-              git pull --rebase origin "$BRANCH" && git push && break
-              echo "Push attempt $i failed, retrying..."
-              sleep 3
-            done
+          if [ "$FORCE" = "true" ] || \
+             { due_window evening && ! already_sent evening; }; then
+
+            send_daily_section evening "Evening stack"
+
+            if [ "$FORCE" != "true" ]; then
+              mark_sent evening
+            fi
           fi
 
-          echo "Done."
+          if [ "$FORCE" = "true" ] || \
+             { due_window workout_pre && ! already_sent workout_pre; }; then
+
+            send_workout_section preworkout "Pre-workout"
+
+            if [ "$FORCE" != "true" ]; then
+              mark_sent workout_pre
+            fi
+          fi
+
+          if [ "$FORCE" = "true" ] || \
+             { due_window workout_post && ! already_sent workout_post; }; then
+
+            send_workout_section postworkout "Post-workout"
+
+            if [ "$FORCE" != "true" ]; then
+              mark_sent workout_post
+            fi
+          fi
+
+          # ============================================================
+          # WEEKLY REMINDERS
+          #
+          # schedule.json structure:
+          #
+          # "weekly": {
+          #   "0": {
+          #     "morning": "08:00",
+          #     "afternoon": "14:00",
+          #     "night": "20:00"
+          #   },
+          #   "3": {
+          #     "morning": "08:00",
+          #     "afternoon": "14:00",
+          #     "night": "20:00"
+          #   }
+          # }
+          #
+          # Therefore we check weekday + slot independently.
+          # ============================================================
+
+          if [ "$FORCE" = "true" ]; then
+
+            echo "FORCE mode: sending all configured weekly slots."
+
+            for WD in $(jq -r '.weekly // {} | keys[]' data/schedule.json); do
+
+              for SLOT in $(jq -r \
+                --arg wd "$WD" \
+                '.weekly[$wd] // {} | keys[]' \
+                data/schedule.json); do
+
+                send_weekly_slot \
+                  "$WD" \
+                  "$SLOT" \
+                  "Weekly dose - ${DAY_NAMES[$WD]} ${SLOT} (test)"
+
+              done
+
+            done
+
+          else
+
+            # Get all configured slots for today's weekday.
+            for SLOT in $(jq -r \
+              --arg wd "$IST_WEEKDAY" \
+              '.weekly[$wd] // {} | keys[]' \
+              data/schedule.json); do
+
+              WEEKLY_TARGET=$(jq -r \
+                --arg wd "$IST_WEEKDAY" \
+                --arg slot "$SLOT" \
+                '.weekly[$wd][$slot] // empty' \
+                data/schedule.json)
+
+              if [ -z "$WEEKLY_TARGET" ]; then
+                continue
+              fi
+
+              WEEKLY_TARGET_MIN=$(to_minutes "$WEEKLY_TARGET")
+              WEEKLY_DIFF=$((CUR_MIN - WEEKLY_TARGET_MIN))
+
+              MARKER="weekly_${IST_WEEKDAY}_${SLOT}"
+
+              echo "Checking weekly $SLOT: target=$WEEKLY_TARGET diff=${WEEKLY_DIFF}min"
+
+              if [ "$WEEKLY_DIFF" -ge 0 ] && \
+                 [ "$WEEKLY_DIFF" -le "$WINDOW_MIN" ] && \
+                 ! already_sent "$MARKER"; then
+
+                send_weekly_slot \
+                  "$IST_WEEKDAY" \
+                  "$SLOT" \
+                  "Weekly dose - ${DAY_NAMES[$IST_WEEKDAY]} ${SLOT}"
+
+                mark_sent "$MARKER"
+              fi
+
+            done
+
+          fi
+
+          # ============================================================
+          # COMMIT SENT MARKERS
+          # ============================================================
+
+          if [ "$CHANGED" = "true" ]; then
+
+            echo "Updating data/logs.json..."
+
+            git config user.name "supplement-tracker-bot"
+            git config user.email "actions@users.noreply.github.com"
+
+            git add data/logs.json
+
+            git commit \
+              -m "Mark reminders sent for $IST_DATE" || true
+
+            # Retry because another repository operation may have happened.
+            for i in 1 2 3; do
+
+              if git pull --rebase origin "$BRANCH" && \
+                 git push origin "$BRANCH"; then
+
+                echo "Sent markers pushed successfully."
+                break
+
+              fi
+
+              echo "Push attempt $i failed, retrying..."
+              sleep 3
+
+            done
+
+          else
+            echo "No sent markers changed."
+          fi
+
+          echo "=========================================="
+          echo "Reminder processing complete."
+          echo "=========================================="
