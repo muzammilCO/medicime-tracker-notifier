@@ -21,8 +21,6 @@ name: Reminders (dynamic, IST)
 # Neither requires touching this file.
 
 on:
-  schedule:
-    - cron: '37 * * * *'
   workflow_dispatch:
     inputs:
       force:
