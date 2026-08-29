@@ -569,10 +569,10 @@ function setChecked(key, id, val){ const d = loadDay(key); d[id] = val; saveDay(
 // ---- Freezing past days against later cabinet edits ----
 // A day's own log entry (LOGS[key]) can carry an __items snapshot: the
 // cabinet exactly as it stood while that day was still "today". Once a day
-// is in the past, we render it from that snapshot (if we have one) instead
-// of the live cabinet, so editing/adding/removing supplements today or
-// later never rewrites what an already-past day shows or counts as
-// "scheduled". Today and future days always use the live cabinet.
+// is in the past, we render it from that snapshot instead of the live
+// cabinet, so editing/adding/removing supplements today or in the future
+// never rewrites what an already-past day shows or counts as "scheduled".
+// Today and future days always use the live cabinet.
 function todayKey(){ return dateKey(new Date()); }
 function itemsSourceForDate(date){
   const key = dateKey(date);
@@ -582,22 +582,53 @@ function itemsSourceForDate(date){
   }
   return ITEMS;
 }
-// Runs on load and before every render: any day that has already slipped
-// into the past but has no snapshot yet (first run after this feature, or a
-// day that only just became "yesterday") gets one taken now, from whatever
-// the cabinet currently looks like. From that point on it's frozen — later
-// cabinet edits can't touch it. Days with no log entry at all are left
-// alone (nothing to freeze; they'll fall back to best-effort live data).
+// Runs on load, before any cabinet edit can happen in this session — this
+// is what actually makes "today's/future edits don't touch the past" true,
+// not just for days you'd already logged something on: the very first time
+// a day is no longer today, it gets a permanent snapshot of the cabinet as
+// it stood at that moment. Everything from here on freezes that day; only
+// days that predate this feature's first run (no last-seen marker yet)
+// fall back to best-effort live data, since there's no earlier history to
+// freeze from.
 function ensurePastSnapshots(){
   const tk = todayKey();
+  const lastSeen = localStorage.getItem('stack:last-seen-day');
   let changed = false;
-  Object.keys(LOGS).forEach(key=>{
-    if(key < tk && LOGS[key] && !LOGS[key].__items){
+
+  const freezeDay = (key)=>{
+    if(!LOGS[key]) LOGS[key] = {};
+    if(!LOGS[key].__items){
       LOGS[key].__items = JSON.parse(JSON.stringify(ITEMS));
       changed = true;
     }
+  };
+
+  if(lastSeen && lastSeen < tk){
+    // Every day from the last time the app was open up to (not including)
+    // today just rolled from "today"/"future" into the past — freeze each
+    // one now, before this session can make any cabinet edit.
+    let cursor = new Date(lastSeen + 'T00:00:00');
+    const today = new Date(tk + 'T00:00:00');
+    let guard = 0;
+    while(cursor < today && guard < 3660){
+      freezeDay(dateKey(cursor));
+      cursor.setDate(cursor.getDate()+1);
+      guard++;
+    }
+  }
+  // Backfill: any older logged day that still has no snapshot (legacy data
+  // from before this feature existed) gets one too, so it stops moving.
+  Object.keys(LOGS).forEach(key=>{
+    if(key < tk && LOGS[key] && !LOGS[key].__items){
+      freezeDay(key);
+    }
   });
-  if(changed) localStorage.setItem('stack:logs-cache', JSON.stringify(LOGS));
+
+  if(lastSeen !== tk) localStorage.setItem('stack:last-seen-day', tk);
+  if(changed){
+    localStorage.setItem('stack:logs-cache', JSON.stringify(LOGS));
+    scheduleLogsCommit(); // keep other devices' view of frozen days in sync too
+  }
 }
 
 function scheduleLogsCommit(){
