@@ -55,15 +55,15 @@ jobs:
           }
 
           send_weekday() {
-            # $1 = weekday number (0=Sun..6=Sat), $2 = notification title
-            BODY=$(jq -r --argjson w "$1" '
-              [.[] | select(.freq.type=="weekly" and .freq.weekday==$w)]
+            # $1 = weekday number (0=Sun..6=Sat), $2 = slot (morning/afternoon/night), $3 = notification title
+            BODY=$(jq -r --argjson w "$1" --arg sl "$2" '
+              [.[] | select(.freq.type=="weekly" and .freq.weekday==$w and ((.freq.slot // "morning")==$sl))]
               | sort_by(.order)
               | map("• " + .name + " — " + .dose + (if .note then " (" + .note + ")" else "" end))
               | join("\n")
             ' data/items.json)
-            [ -z "$BODY" ] && { echo "Nothing scheduled for weekday $1, skipping."; return; }
-            curl -s -H "Title: $2" -H "Priority: high" -H "Tags: calendar,pill" -d "$BODY" "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}"
+            [ -z "$BODY" ] && { echo "Nothing scheduled for weekday $1 / $2, skipping."; return; }
+            curl -s -H "Title: $3" -H "Priority: high" -H "Tags: calendar,pill" -d "$BODY" "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}"
           }
 
           send_workout_section() {
@@ -82,18 +82,26 @@ jobs:
           due workout_post  && send_workout_section postworkout "Post-workout"
 
           DAY_NAMES=(Sunday Monday Tuesday Wednesday Thursday Friday Saturday)
+          SLOT_NAMES=(morning afternoon night)
 
           if [ "$FORCE" = "true" ]; then
-            # Test mode: send the weekly notification for every weekday that
-            # has a configured time, regardless of what day it actually is.
+            # Test mode: send the weekly notification for every weekday + slot
+            # that has a configured time, regardless of what day/time it is.
             for WD in $(jq -r '.weekly // {} | keys[]' data/schedule.json); do
-              send_weekday "$WD" "Weekly dose - ${DAY_NAMES[$WD]} (test)"
+              for SL in "${SLOT_NAMES[@]}"; do
+                send_weekday "$WD" "$SL" "Weekly dose - ${DAY_NAMES[$WD]} ($SL, test)"
+              done
             done
           else
-            WEEKLY_TARGET=$(jq -r --arg wd "$IST_WEEKDAY" '.weekly[$wd] // empty' data/schedule.json)
-            if [ -n "$WEEKLY_TARGET" ] && [ "$IST_TIME" = "$WEEKLY_TARGET" ]; then
-              send_weekday "$IST_WEEKDAY" "Weekly dose - ${DAY_NAMES[$IST_WEEKDAY]}"
-            fi
+            # Only fires for the current weekday, and only in the slot whose
+            # time matches right now — a Wednesday-morning item never fires
+            # on Thursday, or in the afternoon/night slot.
+            for SL in "${SLOT_NAMES[@]}"; do
+              WEEKLY_TARGET=$(jq -r --arg wd "$IST_WEEKDAY" --arg sl "$SL" '.weekly[$wd][$sl] // empty' data/schedule.json)
+              if [ -n "$WEEKLY_TARGET" ] && [ "$IST_TIME" = "$WEEKLY_TARGET" ]; then
+                send_weekday "$IST_WEEKDAY" "$SL" "Weekly dose - ${DAY_NAMES[$IST_WEEKDAY]} ($SL)"
+              fi
+            done
           fi
 
           echo "Done."
