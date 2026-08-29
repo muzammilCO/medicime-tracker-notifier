@@ -207,9 +207,14 @@
     <div class="toggle-row">
       <div>
         <div class="t-label" id="workoutLabel">Workout day</div>
-        <div class="t-sub">Unlocks L-Arginine + protein/creatine emphasis</div>
+        <div class="t-sub" id="workoutSub">Unlocks L-Arginine + protein/creatine emphasis</div>
       </div>
       <div class="switch" id="workoutSwitch"><div class="knob"></div></div>
+    </div>
+
+    <div id="workoutDescriptionBanner" style="display:none;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px 16px;margin-bottom:16px;">
+      <div class="strip-label" style="margin-bottom:5px;">Workout details</div>
+      <div id="workoutDescriptionText" style="font-size:13.5px;line-height:1.5;white-space:pre-wrap;"></div>
     </div>
 
     <div class="section"><div class="section-head"><div class="section-head-left"><span class="icon">AM</span><h2>Morning</h2></div></div>
@@ -246,6 +251,7 @@
     Cabinet edits, notification times, and check-off history sync across every device that has
     the Worker URL + PIN set in ⚙ Sync settings; without that, this device only saves locally.<br>
     Notification wording updates automatically from your cabinet — nothing to edit in the workflow file.<br>
+Workout days and workout details are managed from ⚙ Sync settings and sync to data/workout-settings.json.<br>
     Past days are locked by default so cabinet edits and new check-offs can't change already-logged
     history by accident — unlock a specific past day from its banner to correct it.<br>
     Review this stack with a doctor periodically, especially around the Vitamin D3 phase change.
@@ -364,9 +370,30 @@
     </div>
     <p class="item-note" id="wk-shared-note">Other items on the same weekday share these times.</p>
 
+    <div style="border-top:1px solid var(--line); margin: 16px 0 14px;"></div>
+
+    <h3 style="margin-top: 0;">Workout settings</h3>
+    <p class="item-note" style="margin: -6px 0 14px;">
+      Choose your normal workout days in advance. These days become the default
+      workout days for future dates; you can still override an individual day
+      from the main checklist.
+    </p>
+
+    <div class="field">
+      <label>Workout days</label>
+      <div id="workday-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;"></div>
+    </div>
+
+    <div class="field">
+      <label>Workout details</label>
+      <textarea id="workout-description" rows="4"
+        placeholder="e.g. Upper body + 20 min cardio&#10;Focus: progressive overload..."></textarea>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-secondary" id="sch-cancel">Close</button>
       <button class="btn btn-primary" id="sch-save">Save times</button>
+      <button class="btn btn-primary" id="workout-save">Save workout settings</button>
     </div>
   </div>
 </div>
@@ -424,6 +451,14 @@ const DEFAULT_SCHEDULE = {
   }
 };
 
+const DEFAULT_WORKOUT_SETTINGS = {
+  // 0=Sunday ... 6=Saturday. Default: Monday-Friday.
+  days: { '0':false, '1':true, '2':true, '3':true, '4':true, '5':true, '6':false },
+  description: ''
+};
+
+let WORKOUT_SETTINGS = JSON.parse(JSON.stringify(DEFAULT_WORKOUT_SETTINGS));
+
 // ---- Item storage: data/items.json in the repo is the source of truth,
 // shared by this web app AND the GitHub Actions notifications. localStorage
 // is only a fast local cache / offline fallback.
@@ -471,6 +506,58 @@ async function initSchedule(){
     if(cached){ SCHEDULE = JSON.parse(cached); return; }
   }catch(e){}
   SCHEDULE = JSON.parse(JSON.stringify(DEFAULT_SCHEDULE));
+}
+
+async function initWorkoutSettings(){
+  if(!isDirty('workout-settings')){
+    try{
+      const res = await fetch('data/workout-settings.json', {cache:'no-store'});
+      if(res.ok){
+        const remote = await res.json();
+        WORKOUT_SETTINGS = {
+          ...DEFAULT_WORKOUT_SETTINGS,
+          ...remote,
+          days: {...DEFAULT_WORKOUT_SETTINGS.days, ...(remote.days||{})}
+        };
+        localStorage.setItem('stack:workout-settings-cache', JSON.stringify(WORKOUT_SETTINGS));
+        return;
+      }
+    }catch(e){}
+  }
+  try{
+    const cached = localStorage.getItem('stack:workout-settings-cache');
+    if(cached){
+      const parsed = JSON.parse(cached);
+      WORKOUT_SETTINGS = {
+        ...DEFAULT_WORKOUT_SETTINGS,
+        ...parsed,
+        days: {...DEFAULT_WORKOUT_SETTINGS.days, ...(parsed.days||{})}
+      };
+      return;
+    }
+  }catch(e){}
+  WORKOUT_SETTINGS = JSON.parse(JSON.stringify(DEFAULT_WORKOUT_SETTINGS));
+}
+
+async function commitWorkoutSettings(settings){
+  WORKOUT_SETTINGS = {
+    ...DEFAULT_WORKOUT_SETTINGS,
+    ...settings,
+    days: {...DEFAULT_WORKOUT_SETTINGS.days, ...(settings.days||{})}
+  };
+  localStorage.setItem('stack:workout-settings-cache', JSON.stringify(WORKOUT_SETTINGS));
+
+  const res = await syncJsonToGithub('data/workout-settings.json', WORKOUT_SETTINGS);
+  if(res.ok){
+    clearDirty('workout-settings');
+    showToast('✓ Workout settings saved and synced to GitHub');
+  }else if(res.reason==='not-configured'){
+    markDirty('workout-settings');
+    showToast('Saved locally — add Worker URL + PIN in Settings to sync');
+  }else{
+    markDirty('workout-settings');
+    showToast('Saved locally — sync failed: ' + res.reason, true);
+  }
 }
 function saveItemsLocal(items){ localStorage.setItem('stack:items-cache', JSON.stringify(items)); }
 
@@ -581,8 +668,22 @@ function saveDay(key, data){
   markDirty('logs');
   scheduleLogsCommit();
 }
-function isWorkoutDay(key){ return loadDay(key).__workout === true; }
-function setWorkoutDay(key, val){ const d = loadDay(key); d.__workout = val; saveDay(key, d); }
+function defaultWorkoutForDate(key){
+  const d = new Date(key + 'T00:00:00');
+  return WORKOUT_SETTINGS.days[String(d.getDay())] === true;
+}
+
+function isWorkoutDay(key){
+  const day = loadDay(key);
+  if(Object.prototype.hasOwnProperty.call(day, '__workout')) return day.__workout === true;
+  return defaultWorkoutForDate(key);
+}
+
+function setWorkoutDay(key, val){
+  const d = loadDay(key);
+  d.__workout = val;
+  saveDay(key, d);
+}
 function isChecked(key, id){ return !!loadDay(key)[id]; }
 function setChecked(key, id, val){ const d = loadDay(key); d[id] = val; saveDay(key, d); }
 
@@ -730,6 +831,12 @@ function renderChecklist(){
   pastToggleBtn.classList.toggle('unlocked', pastEditUnlocked);
 
   document.getElementById('workoutLabel').textContent = isFuture ? 'Planned workout day' : 'Workout day';
+  const workoutSub = document.getElementById('workoutSub');
+  const configuredDefault = defaultWorkoutForDate(key);
+  const explicitOverride = Object.prototype.hasOwnProperty.call(loadDay(key), '__workout');
+  workoutSub.textContent = explicitOverride
+    ? 'Per-day override · default schedule is ' + (configuredDefault ? 'ON' : 'OFF')
+    : 'Default schedule: ' + (configuredDefault ? 'ON' : 'OFF') + ' for ' + DAY_NAMES[vd.getDay()];
   const sw = document.getElementById('workoutSwitch');
   sw.classList.toggle('on', isWorkoutDay(key));
   sw.classList.toggle('locked', locked);
@@ -737,6 +844,11 @@ function renderChecklist(){
   sw.style.cursor = locked ? 'not-allowed' : 'pointer';
 
   const workout = isWorkoutDay(key);
+  const descBanner = document.getElementById('workoutDescriptionBanner');
+  const descText = document.getElementById('workoutDescriptionText');
+  descBanner.style.display = workout && WORKOUT_SETTINGS.description ? '' : 'none';
+  descText.textContent = workout ? (WORKOUT_SETTINGS.description || '') : '';
+
   ['morning','preworkout','postworkout','evening','weekly'].forEach(section=>{
     const container = document.getElementById('list-'+section);
     container.innerHTML = '';
@@ -955,6 +1067,22 @@ function openSettingsModal(){
     loadWeeklyPickerFor(weeklyItems[0]);
   }
 
+  // Workout-day selector + description
+  const grid = document.getElementById('workday-grid');
+  grid.innerHTML = '';
+  DAY_NAMES.forEach((name, wd)=>{
+    const label = document.createElement('label');
+    label.style.cssText = 'display:flex;align-items:center;gap:9px;padding:10px 11px;border:1px solid var(--line);border-radius:9px;background:var(--bg);cursor:pointer;';
+    const checked = WORKOUT_SETTINGS.days[String(wd)] === true;
+    label.innerHTML = `
+      <input type="checkbox" class="workday-check" data-weekday="${wd}" ${checked?'checked':''}
+        style="width:17px;height:17px;accent-color:var(--teal);">
+      <span style="font-size:13px;font-weight:600;">${name}</span>
+    `;
+    grid.appendChild(label);
+  });
+  document.getElementById('workout-description').value = WORKOUT_SETTINGS.description || '';
+
   document.getElementById('settingsOverlay').classList.add('show');
 }
 function currentWeekdaySlotTimes(){
@@ -995,7 +1123,7 @@ SLOTS.forEach(sl=>{
 function closeSettingsModal(){ document.getElementById('settingsOverlay').classList.remove('show'); }
 
 function refreshDirtyNote(){
-  const dirtyKinds = ['items','schedule','logs'].filter(isDirty);
+  const dirtyKinds = ['items','schedule','logs','workout-settings'].filter(isDirty);
   const note = document.getElementById('dirty-note');
   const row = document.getElementById('retry-sync-row');
   if(dirtyKinds.length){
@@ -1034,6 +1162,7 @@ document.getElementById('gh-retry').addEventListener('click', async ()=>{
   if(isDirty('items')) await commitItems(ITEMS);
   if(isDirty('schedule')) await commitSchedule(SCHEDULE);
   if(isDirty('logs')) await commitLogsToGithub();
+  if(isDirty('workout-settings')) await commitWorkoutSettings(WORKOUT_SETTINGS);
   refreshDirtyNote();
 });
 document.getElementById('sch-save').addEventListener('click', ()=>{
@@ -1050,6 +1179,27 @@ document.getElementById('sch-save').addEventListener('click', ()=>{
     'Are you sure you want to change your reminder times? This updates data/schedule.json and takes effect on the next 5-minute check.',
     'Edit schedule',
     ()=>{ SCHEDULE = next; commitSchedule(SCHEDULE); }
+  );
+});
+
+document.getElementById('workout-save').addEventListener('click', ()=>{
+  const days = {};
+  document.querySelectorAll('.workday-check').forEach(cb=>{
+    days[String(cb.dataset.weekday)] = cb.checked;
+  });
+
+  const description = document.getElementById('workout-description').value.trim();
+
+  const next = {
+    days,
+    description
+  };
+
+  askConfirm(
+    'Update workout settings?',
+    'This changes your default workout days for future dates and saves the workout description.',
+    'Workout settings',
+    ()=>{ commitWorkoutSettings(next); renderAll(); }
   );
 });
 
@@ -1161,7 +1311,7 @@ document.body.addEventListener('click', (e)=>{
   }
 });
 
-Promise.all([initItems(), initSchedule(), initLogs()]).then(renderAll);
+Promise.all([initItems(), initSchedule(), initWorkoutSettings(), initLogs()]).then(renderAll);
 </script>
 </body>
 </html>
