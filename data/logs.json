@@ -643,7 +643,7 @@
     "protein": true,
     "creatine": true,
     "calcium": true,
-    "omega3": true,
+    "omega3": false,
     "maglycid3": true,
     "__workout": true,
     "larginine": true,
