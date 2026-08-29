@@ -637,6 +637,9 @@
   "2026-08-29": {
     "multivit": true,
     "bcomplex": true,
-    "shilajit": false
+    "shilajit": false,
+    "calcium": true,
+    "omega3": true,
+    "maglycid3": true
   }
 }
