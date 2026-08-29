@@ -2,8 +2,9 @@ name: Schedule Debug
 
 on:
   schedule:
-    - cron: '2,7,12,17,22,27,32,37,42,47,52,57 * * * *'
-      timezone: 'Asia/Kolkata'
+    # Runs at minute 15 and 45 of every hour (UTC)
+    # This avoids heavy traffic on the hour (* * * * *) and prevents throttling
+    - cron: '15,45 * * * *'
   workflow_dispatch:
 
 jobs:
