@@ -1,17 +1,16 @@
-name: Scheduler Probe
+name: Old Schedule Test
 
 on:
   schedule:
-    - cron: '4,9,14,19,24,29,34,39,44,49,54,59 * * * *'
-  workflow_dispatch:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
 
 jobs:
-  probe:
+  test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Report time
+      - name: Test
         run: |
           echo "UTC: $(date -u)"
           echo "IST: $(TZ='Asia/Kolkata' date)"
-          echo "Triggered by: ${{ github.event_name }}"
+          echo "Event: ${{ github.event_name }}"
