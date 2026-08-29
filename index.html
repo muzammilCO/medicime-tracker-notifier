@@ -325,10 +325,14 @@
       once per device — see the README's "Sync without pasting a long token"
       section.
     </p>
+    <p class="item-note" id="dirty-note" style="display:none; color:var(--danger);"></p>
     <div class="modal-actions">
       <button class="btn btn-danger" id="gh-clear">Clear PIN</button>
       <button class="btn btn-secondary" id="gh-cancel">Cancel</button>
       <button class="btn btn-primary" id="gh-save">Save</button>
+    </div>
+    <div class="modal-actions" id="retry-sync-row" style="display:none; margin-top:-6px;">
+      <button class="btn btn-secondary" id="gh-retry" style="flex:1;">↻ Retry syncing unsynced changes</button>
     </div>
 
     <h3 style="margin-top: 22px;">Notification times (IST)</h3>
@@ -422,17 +426,28 @@ const DEFAULT_SCHEDULE = {
 
 // ---- Item storage: data/items.json in the repo is the source of truth,
 // shared by this web app AND the GitHub Actions notifications. localStorage
-// is only a fast local cache / offline fallback. ----
+// is only a fast local cache / offline fallback.
+//
+// If a local edit couldn't sync (Worker not configured, wrong PIN, etc.),
+// the "dirty" flag below stops the next page load from re-fetching the
+// still-stale remote file and silently discarding that unsynced edit — the
+// local cache wins until a sync actually succeeds. ----
+function markDirty(kind){ localStorage.setItem('stack:'+kind+'-dirty', '1'); }
+function clearDirty(kind){ localStorage.removeItem('stack:'+kind+'-dirty'); }
+function isDirty(kind){ return localStorage.getItem('stack:'+kind+'-dirty') === '1'; }
+
 async function initItems(){
-  try{
-    const res = await fetch('data/items.json', {cache:'no-store'});
-    if(res.ok){
-      const remote = await res.json();
-      ITEMS = remote;
-      localStorage.setItem('stack:items-cache', JSON.stringify(remote));
-      return;
-    }
-  }catch(e){ /* offline or first run without hosting — fall through */ }
+  if(!isDirty('items')){
+    try{
+      const res = await fetch('data/items.json', {cache:'no-store'});
+      if(res.ok){
+        const remote = await res.json();
+        ITEMS = remote;
+        localStorage.setItem('stack:items-cache', JSON.stringify(remote));
+        return;
+      }
+    }catch(e){ /* offline or first run without hosting — fall through */ }
+  }
   try{
     const cached = localStorage.getItem('stack:items-cache') || localStorage.getItem('stack:items');
     if(cached){ ITEMS = JSON.parse(cached); return; }
@@ -440,15 +455,17 @@ async function initItems(){
   ITEMS = JSON.parse(JSON.stringify(DEFAULT_ITEMS));
 }
 async function initSchedule(){
-  try{
-    const res = await fetch('data/schedule.json', {cache:'no-store'});
-    if(res.ok){
-      const remote = await res.json();
-      SCHEDULE = remote;
-      localStorage.setItem('stack:schedule-cache', JSON.stringify(remote));
-      return;
-    }
-  }catch(e){}
+  if(!isDirty('schedule')){
+    try{
+      const res = await fetch('data/schedule.json', {cache:'no-store'});
+      if(res.ok){
+        const remote = await res.json();
+        SCHEDULE = remote;
+        localStorage.setItem('stack:schedule-cache', JSON.stringify(remote));
+        return;
+      }
+    }catch(e){}
+  }
   try{
     const cached = localStorage.getItem('stack:schedule-cache');
     if(cached){ SCHEDULE = JSON.parse(cached); return; }
@@ -484,16 +501,16 @@ async function syncItemsToGithub(items){ return syncJsonToGithub('data/items.jso
 async function commitItems(items){
   saveItemsLocal(items);
   const res = await syncJsonToGithub('data/items.json', items);
-  if(res.ok) showToast('✓ Saved and synced to GitHub');
-  else if(res.reason==='not-configured') showToast('Saved locally — add Worker URL + PIN in Settings to sync');
-  else showToast('Saved locally — sync failed: ' + res.reason, true);
+  if(res.ok){ clearDirty('items'); showToast('✓ Saved and synced to GitHub'); }
+  else if(res.reason==='not-configured'){ markDirty('items'); showToast('Saved locally — add Worker URL + PIN in Settings to sync'); }
+  else { markDirty('items'); showToast('Saved locally — sync failed: ' + res.reason, true); }
 }
 async function commitSchedule(schedule){
   localStorage.setItem('stack:schedule-cache', JSON.stringify(schedule));
   const res = await syncJsonToGithub('data/schedule.json', schedule);
-  if(res.ok) showToast('✓ Notification times saved and synced');
-  else if(res.reason==='not-configured') showToast('Saved locally — add Worker URL + PIN in Settings to sync');
-  else showToast('Saved locally — sync failed: ' + res.reason, true);
+  if(res.ok){ clearDirty('schedule'); showToast('✓ Notification times saved and synced'); }
+  else if(res.reason==='not-configured'){ markDirty('schedule'); showToast('Saved locally — add Worker URL + PIN in Settings to sync'); }
+  else { markDirty('schedule'); showToast('Saved locally — sync failed: ' + res.reason, true); }
 }
 
 // ---- Toast ----
@@ -533,14 +550,16 @@ let LOGS = {}; // { "2026-08-25": { multivit: true, __workout: false, ... }, ...
 let logsCommitTimer = null;
 
 async function initLogs(){
-  try{
-    const res = await fetch('data/logs.json', {cache:'no-store'});
-    if(res.ok){
-      LOGS = await res.json();
-      localStorage.setItem('stack:logs-cache', JSON.stringify(LOGS));
-      return;
-    }
-  }catch(e){}
+  if(!isDirty('logs')){
+    try{
+      const res = await fetch('data/logs.json', {cache:'no-store'});
+      if(res.ok){
+        LOGS = await res.json();
+        localStorage.setItem('stack:logs-cache', JSON.stringify(LOGS));
+        return;
+      }
+    }catch(e){}
+  }
   try{
     const cached = localStorage.getItem('stack:logs-cache');
     if(cached){ LOGS = JSON.parse(cached); return; }
@@ -559,6 +578,7 @@ function loadDay(key){ return LOGS[key] || {}; }
 function saveDay(key, data){
   LOGS[key] = data;
   localStorage.setItem('stack:logs-cache', JSON.stringify(LOGS));
+  markDirty('logs');
   scheduleLogsCommit();
 }
 function isWorkoutDay(key){ return loadDay(key).__workout === true; }
@@ -568,67 +588,31 @@ function setChecked(key, id, val){ const d = loadDay(key); d[id] = val; saveDay(
 
 // ---- Freezing past days against later cabinet edits ----
 // A day's own log entry (LOGS[key]) can carry an __items snapshot: the
-// cabinet exactly as it stood while that day was still "today". Once a day
-// is in the past, we render it from that snapshot instead of the live
-// cabinet, so editing/adding/removing supplements today or in the future
-// never rewrites what an already-past day shows or counts as "scheduled".
-// Today and future days always use the live cabinet.
+// cabinet exactly as it stood the moment that day was first viewed as a
+// past day. Once a day is in the past, we render it from that snapshot —
+// taking one right now, on first access, if it doesn't have one yet — so
+// editing/adding/removing supplements today or in the future never
+// rewrites what an already-past day shows or counts as "scheduled". Today
+// and future days always use the live cabinet.
+//
+// This freezes lazily, on first view, rather than only for days you'd
+// already logged something on — so even a past day you've never opened
+// locks in the moment you look at it, before you can edit the cabinet
+// afterward. (A day that's never once been viewed since this feature
+// shipped has no snapshot to freeze from, so it still shows best-effort
+// live data until the first time it's opened.)
 function todayKey(){ return dateKey(new Date()); }
 function itemsSourceForDate(date){
   const key = dateKey(date);
-  if(key < todayKey()){
-    const snap = LOGS[key] && LOGS[key].__items;
-    if(snap) return snap;
-  }
-  return ITEMS;
-}
-// Runs on load, before any cabinet edit can happen in this session — this
-// is what actually makes "today's/future edits don't touch the past" true,
-// not just for days you'd already logged something on: the very first time
-// a day is no longer today, it gets a permanent snapshot of the cabinet as
-// it stood at that moment. Everything from here on freezes that day; only
-// days that predate this feature's first run (no last-seen marker yet)
-// fall back to best-effort live data, since there's no earlier history to
-// freeze from.
-function ensurePastSnapshots(){
-  const tk = todayKey();
-  const lastSeen = localStorage.getItem('stack:last-seen-day');
-  let changed = false;
-
-  const freezeDay = (key)=>{
-    if(!LOGS[key]) LOGS[key] = {};
-    if(!LOGS[key].__items){
-      LOGS[key].__items = JSON.parse(JSON.stringify(ITEMS));
-      changed = true;
-    }
-  };
-
-  if(lastSeen && lastSeen < tk){
-    // Every day from the last time the app was open up to (not including)
-    // today just rolled from "today"/"future" into the past — freeze each
-    // one now, before this session can make any cabinet edit.
-    let cursor = new Date(lastSeen + 'T00:00:00');
-    const today = new Date(tk + 'T00:00:00');
-    let guard = 0;
-    while(cursor < today && guard < 3660){
-      freezeDay(dateKey(cursor));
-      cursor.setDate(cursor.getDate()+1);
-      guard++;
-    }
-  }
-  // Backfill: any older logged day that still has no snapshot (legacy data
-  // from before this feature existed) gets one too, so it stops moving.
-  Object.keys(LOGS).forEach(key=>{
-    if(key < tk && LOGS[key] && !LOGS[key].__items){
-      freezeDay(key);
-    }
-  });
-
-  if(lastSeen !== tk) localStorage.setItem('stack:last-seen-day', tk);
-  if(changed){
+  if(key >= todayKey()) return ITEMS;
+  if(!LOGS[key]) LOGS[key] = {};
+  if(!LOGS[key].__items){
+    LOGS[key].__items = JSON.parse(JSON.stringify(ITEMS));
     localStorage.setItem('stack:logs-cache', JSON.stringify(LOGS));
-    scheduleLogsCommit(); // keep other devices' view of frozen days in sync too
+    markDirty('logs');
+    scheduleLogsCommit(); // keep other devices' view of this frozen day in sync too
   }
+  return LOGS[key].__items;
 }
 
 function scheduleLogsCommit(){
@@ -638,7 +622,7 @@ function scheduleLogsCommit(){
 
 async function commitLogsToGithub(){
   const cfg = getGhConfig();
-  if(!cfg || !cfg.workerUrl || !cfg.pin) return; // local-only, silently
+  if(!cfg || !cfg.workerUrl || !cfg.pin) return; // local-only, silently — stays marked dirty
   try{
     // Re-fetch the latest committed version first (public, no auth needed)
     // so a same-day edit from another device isn't overwritten.
@@ -657,7 +641,7 @@ async function commitLogsToGithub(){
     localStorage.setItem('stack:logs-cache', JSON.stringify(LOGS));
 
     const result = await syncJsonToGithub('data/logs.json', merged);
-    if(result.ok) showToast('✓ History synced');
+    if(result.ok){ clearDirty('logs'); showToast('✓ History synced'); }
     else showToast('History sync failed: ' + result.reason, true);
   }catch(e){ showToast('History sync failed: ' + e.message, true); }
 }
@@ -831,7 +815,6 @@ function renderCabinet(){
 }
 
 function renderAll(){
-  ensurePastSnapshots();
   renderBlister();
   if(editMode) renderCabinet(); else renderChecklist();
 }
@@ -945,6 +928,7 @@ function openSettingsModal(){
   const cfg = getGhConfig() || {};
   document.getElementById('gh-workerurl').value = cfg.workerUrl || DEFAULT_WORKER_URL;
   document.getElementById('gh-pin').value = cfg.pin || '';
+  refreshDirtyNote();
 
   ['morning','evening','workout_pre','workout_post'].forEach(k=>{
     const el = document.getElementById('sch-'+k);
@@ -1010,6 +994,20 @@ SLOTS.forEach(sl=>{
 
 function closeSettingsModal(){ document.getElementById('settingsOverlay').classList.remove('show'); }
 
+function refreshDirtyNote(){
+  const dirtyKinds = ['items','schedule','logs'].filter(isDirty);
+  const note = document.getElementById('dirty-note');
+  const row = document.getElementById('retry-sync-row');
+  if(dirtyKinds.length){
+    note.style.display = '';
+    note.textContent = `Unsynced local changes: ${dirtyKinds.join(', ')}. They're saved on this device but haven't reached GitHub yet.`;
+    row.style.display = '';
+  } else {
+    note.style.display = 'none';
+    row.style.display = 'none';
+  }
+}
+
 document.getElementById('gh-cancel').addEventListener('click', closeSettingsModal);
 document.getElementById('sch-cancel').addEventListener('click', closeSettingsModal);
 document.getElementById('gh-save').addEventListener('click', ()=>{
@@ -1017,6 +1015,7 @@ document.getElementById('gh-save').addEventListener('click', ()=>{
   const pin = document.getElementById('gh-pin').value.trim();
   saveGhConfig({workerUrl, pin});
   showToast(workerUrl && pin ? '✓ Sync settings saved' : 'Settings saved (incomplete — sync stays off)');
+  refreshDirtyNote();
 });
 document.getElementById('gh-clear').addEventListener('click', ()=>{
   askConfirm('Clear saved PIN?', 'This removes the sync PIN from this browser. Edits will keep saving locally, but stop syncing to your repo until you add it again.', 'Clear PIN', ()=>{
@@ -1024,7 +1023,18 @@ document.getElementById('gh-clear').addEventListener('click', ()=>{
     saveGhConfig({...cfg, pin:''});
     document.getElementById('gh-pin').value = '';
     showToast('PIN cleared');
+    refreshDirtyNote();
   });
+});
+document.getElementById('gh-retry').addEventListener('click', async ()=>{
+  const workerUrl = document.getElementById('gh-workerurl').value.trim();
+  const pin = document.getElementById('gh-pin').value.trim();
+  saveGhConfig({workerUrl, pin});
+  showToast('Retrying sync…');
+  if(isDirty('items')) await commitItems(ITEMS);
+  if(isDirty('schedule')) await commitSchedule(SCHEDULE);
+  if(isDirty('logs')) await commitLogsToGithub();
+  refreshDirtyNote();
 });
 document.getElementById('sch-save').addEventListener('click', ()=>{
   const next = {...SCHEDULE};
