@@ -45,7 +45,7 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           set -e
-          WINDOW_MIN=90   # how many minutes late a run is still allowed to fire, once
+          WINDOW_MIN=200   # how many minutes late a run is still allowed to fire, once
 
           IST_TIME=$(TZ='Asia/Kolkata' date +%H:%M)
           IST_DATE=$(TZ='Asia/Kolkata' date +%F)
