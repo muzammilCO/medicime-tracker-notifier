@@ -646,6 +646,7 @@
     "omega3": true,
     "maglycid3": true,
     "creatine": true,
-    "__workout": false
+    "__workout": true,
+    "larginine": true
   }
 }
