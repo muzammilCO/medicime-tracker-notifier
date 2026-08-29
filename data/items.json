@@ -86,7 +86,7 @@
     "freq": {
       "type": "weekly",
       "weekday": 0,
-      "slot": "morning"
+      "slot": "night"
     },
     "note": "Topping up a fruit-based diet",
     "order": 2,
