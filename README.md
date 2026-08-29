@@ -29,23 +29,47 @@ option so it opens like an app.
 - **Week strip navigation** — use the ‹ › arrows to move between weeks, then tap any
   day (past, today, or future) to view that day's checklist below. Past days can
   still be checked/corrected; future days show what's scheduled but can't be
-  checked off yet (nothing "taken" can happen in the future).
+  checked off yet.
 - **Manage cabinet** — tap the button top-right to switch into edit mode. From
-  there you can:
-  - Add a new supplement to any time-of-day section (**+ Add**)
-  - Edit an existing one's name, dose, note, section, or schedule (pencil icon)
-  - Delete one (trash icon)
-  - Reorder items within a section with the ↑ / ↓ arrows — arrange the list to
-    match how your actual cabinet/shelf is laid out
-  - Every add, edit, or delete asks **"Are you sure?"** before it actually saves —
-    nothing changes until you confirm.
-- **Important:** editing an item's name or schedule here only changes what shows
-  in the web app. It does **not** automatically update the wording or timing in
-  your GitHub Actions push notifications — those are separate files. If you
-  rename or reschedule something, edit the matching `.github/workflows/*.yml`
-  file too so your phone reminders stay in sync.
+  there you can add, edit, delete, and reorder (↑ / ↓) any supplement in any
+  section. Every add, edit, or delete asks **"Are you sure?"** before it saves —
+  nothing changes until you confirm.
 
-## How it works
+## Notifications are now fully dynamic — one file drives everything
+
+`data/items.json` and `data/schedule.json` in this repo are the **single source
+of truth**, read by both the web app and the GitHub Action:
+
+- **`data/items.json`** — your supplement list: name, dose, section, and
+  schedule type (daily / workout-day / specific weekday). Editing it changes
+  both what the app shows *and* what your phone notifications say — no need to
+  touch any workflow file.
+- **`data/schedule.json`** — what time each notification fires, written in
+  **IST**, e.g. `"morning": "07:30"`. No UTC conversion needed.
+
+You can edit either file two ways:
+1. **Through the app** — Manage Cabinet for items, or the ⚙ Sync settings
+   panel for notification times. This requires a one-time GitHub connection
+   (below) so the app can commit the change back to your repo.
+2. **Directly on GitHub** — open `data/items.json` or `data/schedule.json` in
+   the repo, click the pencil icon, edit, commit. Works with no setup at all.
+
+If you edit through the app without connecting GitHub, changes still save in
+that browser, but won't reach your notifications until you also edit the file
+on GitHub directly.
+
+### Connecting the app to GitHub (optional, enables in-app syncing)
+
+1. In GitHub: **Settings → Developer settings → Fine-grained tokens → Generate new token**.
+2. Scope it to **only this repository**, with **Contents: Read and write** permission — nothing else.
+3. In the app, tap **⚙ Sync settings**, fill in your GitHub username, repo name, and paste the token.
+4. From then on, cabinet edits and schedule changes made in the app commit straight to your repo.
+
+The token is stored only in that browser's local storage and is sent only to
+`api.github.com` — never anywhere else. Re-enter it if you clear your browser
+data or switch devices.
+
+## How the reminder workflow works
 
 - Every checkbox tap is saved to your browser's `localStorage`, keyed by date —
   so each day's checklist naturally resets.
@@ -60,8 +84,10 @@ option so it opens like an app.
 
 ## Notes
 
-- Data lives only in the browser it was checked in — it won't sync across devices
-  unless you deploy the same page and manually re-check items on each device.
+- Checklist and workout-day data live only in the browser (localStorage) —
+  they don't sync across devices. The supplement list and notification times
+  DO sync across devices/browsers if you've connected GitHub, since they live
+  in the repo.
 - This is a personal tracking tool, not medical software. Recheck the stack itself
   with a doctor periodically, especially around the Vitamin D3 phase change.
 
@@ -69,11 +95,13 @@ option so it opens like an app.
 
 ## Push notifications to your phone (via GitHub Actions + ntfy.sh)
 
-A static site can't send notifications on its own — nothing runs when the page is
-closed. This repo solves that with two free pieces:
+A static site can't send notifications on its own — nothing runs when the page
+is closed. This repo solves that with two free pieces:
 
-- **GitHub Actions**: runs on a schedule in GitHub's cloud, even while your
-  laptop/phone is off. Free for this use (a few seconds of runtime, a few times a day).
+- **GitHub Actions**: runs `.github/workflows/reminders.yml` every 5 minutes
+  in GitHub's cloud, even while your phone is off. It checks `data/schedule.json`
+  against the current time in IST, and sends whatever's due using the current
+  contents of `data/items.json`. Free for this use.
 - **ntfy.sh**: a free, no-signup push notification service. You pick a "topic"
   name (like a private channel), subscribe to it on your phone, and anything
   posted to that topic pops up as a notification.
@@ -94,33 +122,40 @@ In your repo: **Settings → Secrets and variables → Actions → New repositor
 - Name: `NTFY_TOPIC`
 - Value: `muzz-stack-7f3ka9x2` (your topic string, no `ntfy.sh/` prefix)
 
-### 4. Push the `.github/workflows/` folder
-It's already included in this download — just push it to the repo along with
-`index.html`. GitHub will automatically pick up the schedules once it's on `main`.
+### 4. Push everything to your repo
+`index.html`, `data/items.json`, `data/schedule.json`, and
+`.github/workflows/reminders.yml` all need to be pushed together — the app and
+the workflow both read the `data/` files.
 
 ### 5. Test it immediately (don't wait for the schedule)
-Go to your repo's **Actions** tab → pick any workflow (e.g. "Reminder - Morning stack")
-→ **Run workflow** button → confirm. You should get a phone notification within
-a few seconds if the topic is set up correctly.
+Go to your repo's **Actions** tab → **Reminders (dynamic, IST)** → **Run workflow**
+→ tick **force** → confirm. This sends every notification once regardless of
+the current time, so you can verify the whole pipeline works before trusting
+the schedule.
 
-### What's scheduled (all times IST, edit the `cron:` lines to change them)
+### What's scheduled (edit times anytime — in the app's ⚙ Sync settings, or
+directly in `data/schedule.json`; all times are IST)
 
-| Workflow file | Fires | Notification |
+| `schedule.json` key | Default | Sends |
 |---|---|---|
-| `reminder-morning.yml` | 7:30 AM daily | Multivitamin, B-complex, Shilajit |
-| `reminder-evening.yml` | 8:30 PM daily | Calcium combo, Omega-3, Maglyci-D3 |
-| `reminder-vitamin-d3.yml` | 8:00 AM, Sundays | Vitamin D3 60,000 IU |
-| `reminder-vitamin-c.yml` | 8:00 AM, Wednesdays | Vitamin C 500mg |
-| `reminder-workout.yml` | 6:00 PM & 7:15 PM daily | Pre/post-workout (L-Arginine, Protein+Creatine) — edit or delete this one if your gym time doesn't match, since it fires daily regardless of whether it's actually a workout day |
+| `morning` | 07:30 daily | Everything in the Morning section marked "daily" |
+| `evening` | 20:30 daily | Everything in the Evening section marked "daily" |
+| `weekly_sun` | 08:00 Sundays | Everything scheduled for Sunday |
+| `weekly_wed` | 08:00 Wednesdays | Everything scheduled for Wednesday |
+| `workout_pre` | 18:00 daily | Everything in the Pre-workout section |
+| `workout_post` | 19:15 daily | Everything in the Post-workout section |
 
-Cron times in GitHub Actions are always UTC. IST is UTC+5:30, so subtract 5:30
-from the IST time you want to get the UTC value for the `cron:` line.
+The pre/post-workout times fire every day by default since your gym day
+varies — just ignore the notification on rest days, or change the times to
+match your routine.
 
 ### Limitations to know about
 - GitHub free-tier scheduled workflows can be delayed a few minutes during
-  high-load periods — treat times as "around" rather than to-the-second.
-- Scheduled workflows on GitHub pause automatically if the repo has zero
-  activity for 60 days. Just push any small commit (or manually run a workflow
-  once) to keep them active if that happens.
-- Once your D3 60,000 IU correction phase ends, delete or disable
-  `reminder-vitamin-d3.yml` (rename it to end in `.yml.disabled`, or delete it).
+  high-load periods — treat times as "around" rather than to-the-second. Set
+  schedule times in 5-minute increments (the workflow checks every 5 minutes).
+- Scheduled workflows pause automatically if the repo has zero activity for
+  60 days. Push any small commit, or run the workflow manually once, to
+  reactivate it if that happens.
+- Once your D3 60,000 IU correction phase ends, delete the `d3high` entry from
+  `data/items.json` (via the app's Manage Cabinet, or directly on GitHub) so
+  the Sunday reminder stops mentioning it.

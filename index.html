@@ -176,7 +176,10 @@
       <h1>The Stack</h1>
       <p class="subhead">Daily, weekly, and workout-day supplements.</p>
     </div>
-    <button class="edit-toggle" id="editToggle">Manage cabinet</button>
+    <div style="display:flex; gap:8px; flex-direction:column; align-items:flex-end;">
+      <button class="edit-toggle" id="editToggle">Manage cabinet</button>
+      <button class="edit-toggle" id="settingsToggle" style="border-color: var(--ink-soft); color: var(--ink-soft); padding:6px 12px; font-size:11px;">⚙ Sync settings</button>
+    </div>
   </header>
 
   <div class="strip-card">
@@ -288,6 +291,60 @@
   </div>
 </div>
 
+<!-- GitHub sync settings modal -->
+<div class="overlay" id="settingsOverlay">
+  <div class="modal">
+    <h3>Sync settings</h3>
+    <p class="item-note" style="margin: -6px 0 14px;">
+      Connect this app to your GitHub repo so cabinet edits also update
+      <code>data/items.json</code> — the same file your GitHub Actions read to
+      build phone notifications. Without this, edits only save in this browser.
+    </p>
+    <div class="field-row">
+      <div class="field"><label>GitHub username</label><input type="text" id="gh-owner" placeholder="e.g. muzz123"></div>
+      <div class="field"><label>Repository name</label><input type="text" id="gh-repo" placeholder="e.g. supplement-tracker"></div>
+    </div>
+    <div class="field"><label>Branch</label><input type="text" id="gh-branch" placeholder="main"></div>
+    <div class="field">
+      <label>Personal access token</label>
+      <input type="text" id="gh-token" placeholder="github_pat_...">
+    </div>
+    <p class="item-note">
+      Use a <b>fine-grained token</b> scoped to only this one repo, with
+      <b>Contents: Read and write</b> permission — nothing broader. It's stored
+      only in this browser's local storage and sent only to api.github.com.
+      Create one at github.com → Settings → Developer settings → Fine-grained tokens.
+    </p>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="gh-clear">Clear token</button>
+      <button class="btn btn-secondary" id="gh-cancel">Cancel</button>
+      <button class="btn btn-primary" id="gh-save">Save</button>
+    </div>
+
+    <h3 style="margin-top: 22px;">Notification times (IST)</h3>
+    <p class="item-note" style="margin: -6px 0 14px;">
+      When your phone reminders fire — set directly in your local time, no UTC
+      conversion needed. Pick times in 5-minute steps.
+    </p>
+    <div class="field-row">
+      <div class="field"><label>Morning stack</label><input type="time" id="sch-morning" step="300"></div>
+      <div class="field"><label>Evening stack</label><input type="time" id="sch-evening" step="300"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Weekly · Sunday</label><input type="time" id="sch-weekly_sun" step="300"></div>
+      <div class="field"><label>Weekly · Wednesday</label><input type="time" id="sch-weekly_wed" step="300"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Pre-workout</label><input type="time" id="sch-workout_pre" step="300"></div>
+      <div class="field"><label>Post-workout</label><input type="time" id="sch-workout_post" step="300"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="sch-cancel">Close</button>
+      <button class="btn btn-primary" id="sch-save">Save times</button>
+    </div>
+  </div>
+</div>
+
 <!-- Confirmation modal -->
 <div class="overlay" id="confirmOverlay">
   <div class="modal confirm-box">
@@ -323,18 +380,124 @@ const DEFAULT_ITEMS = [
   { id:'vitc',      name:'Vitamin C 500mg (chewable)', dose:'1 tablet', section:'weekly', freq:{type:'weekly', weekday:3}, note:'Topping up a fruit-based diet', order:2 },
 ];
 
-// ---- Storage ----
-function loadItems(){
-  try{
-    const raw = localStorage.getItem('stack:items');
-    if(raw) return JSON.parse(raw);
-  }catch(e){}
-  saveItems(DEFAULT_ITEMS);
-  return JSON.parse(JSON.stringify(DEFAULT_ITEMS));
-}
-function saveItems(items){ localStorage.setItem('stack:items', JSON.stringify(items)); }
+const DEFAULT_SCHEDULE = {
+  morning: '07:30', evening: '20:30',
+  weekly_sun: '08:00', weekly_wed: '08:00',
+  workout_pre: '18:00', workout_post: '19:15'
+};
 
-function dateKey(d){ return d.toISOString().slice(0,10); }
+// ---- Item storage: data/items.json in the repo is the source of truth,
+// shared by this web app AND the GitHub Actions notifications. localStorage
+// is only a fast local cache / offline fallback. ----
+async function initItems(){
+  try{
+    const res = await fetch('data/items.json', {cache:'no-store'});
+    if(res.ok){
+      const remote = await res.json();
+      ITEMS = remote;
+      localStorage.setItem('stack:items-cache', JSON.stringify(remote));
+      return;
+    }
+  }catch(e){ /* offline or first run without hosting — fall through */ }
+  try{
+    const cached = localStorage.getItem('stack:items-cache') || localStorage.getItem('stack:items');
+    if(cached){ ITEMS = JSON.parse(cached); return; }
+  }catch(e){}
+  ITEMS = JSON.parse(JSON.stringify(DEFAULT_ITEMS));
+}
+async function initSchedule(){
+  try{
+    const res = await fetch('data/schedule.json', {cache:'no-store'});
+    if(res.ok){
+      const remote = await res.json();
+      SCHEDULE = remote;
+      localStorage.setItem('stack:schedule-cache', JSON.stringify(remote));
+      return;
+    }
+  }catch(e){}
+  try{
+    const cached = localStorage.getItem('stack:schedule-cache');
+    if(cached){ SCHEDULE = JSON.parse(cached); return; }
+  }catch(e){}
+  SCHEDULE = JSON.parse(JSON.stringify(DEFAULT_SCHEDULE));
+}
+function saveItemsLocal(items){ localStorage.setItem('stack:items-cache', JSON.stringify(items)); }
+
+// ---- GitHub sync config (stored locally only; token never leaves the
+// browser except in direct calls to api.github.com) ----
+function getGhConfig(){ try{ return JSON.parse(localStorage.getItem('stack:ghconfig')||'null'); }catch(e){ return null; } }
+function saveGhConfig(cfg){ localStorage.setItem('stack:ghconfig', JSON.stringify(cfg)); }
+
+async function syncJsonToGithub(path, data){
+  const cfg = getGhConfig();
+  if(!cfg || !cfg.token || !cfg.owner || !cfg.repo) return {ok:false, reason:'not-configured'};
+  const branch = cfg.branch || 'main';
+  const apiUrl = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`;
+  try{
+    let sha;
+    const getRes = await fetch(`${apiUrl}?ref=${branch}`, {
+      headers:{ Authorization:`token ${cfg.token}`, Accept:'application/vnd.github+json' }
+    });
+    if(getRes.ok){ sha = (await getRes.json()).sha; }
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
+    const putRes = await fetch(apiUrl, {
+      method:'PUT',
+      headers:{ Authorization:`token ${cfg.token}`, Accept:'application/vnd.github+json', 'Content-Type':'application/json' },
+      body: JSON.stringify({ message:`Update ${path}`, content, sha, branch })
+    });
+    if(!putRes.ok){ const j = await putRes.json().catch(()=>({})); return {ok:false, reason: j.message || putRes.statusText}; }
+    return {ok:true};
+  }catch(e){ return {ok:false, reason: e.message}; }
+}
+// Kept for backwards compatibility with existing call sites.
+async function syncItemsToGithub(items){ return syncJsonToGithub('data/items.json', items); }
+
+// Save locally immediately (so the UI never waits on the network), then
+// attempt to push to GitHub if a token is configured, and report the result.
+async function commitItems(items){
+  saveItemsLocal(items);
+  const res = await syncJsonToGithub('data/items.json', items);
+  if(res.ok) showToast('✓ Saved and synced to GitHub');
+  else if(res.reason==='not-configured') showToast('Saved locally — add a GitHub token in Settings to sync notifications');
+  else showToast('Saved locally — GitHub sync failed: ' + res.reason, true);
+}
+async function commitSchedule(schedule){
+  localStorage.setItem('stack:schedule-cache', JSON.stringify(schedule));
+  const res = await syncJsonToGithub('data/schedule.json', schedule);
+  if(res.ok) showToast('✓ Notification times saved and synced');
+  else if(res.reason==='not-configured') showToast('Saved locally — add a GitHub token in Settings to sync notification times');
+  else showToast('Saved locally — GitHub sync failed: ' + res.reason, true);
+}
+
+// ---- Toast ----
+let toastTimer;
+function showToast(msg, isError){
+  let t = document.getElementById('toast');
+  if(!t){
+    t = document.createElement('div');
+    t.id = 'toast';
+    t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);' +
+      'background:#1e4a43;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;' +
+      'font-family:Inter,sans-serif;z-index:100;box-shadow:0 6px 20px rgba(0,0,0,0.25);' +
+      'max-width:85vw;text-align:center;opacity:0;transition:opacity .2s ease;';
+    document.body.appendChild(t);
+  }
+  t.style.background = isError ? '#b95c50' : '#1e4a43';
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ t.style.opacity='0'; }, 3200);
+}
+
+// Local-date key (NOT toISOString, which converts to UTC and shifts the date
+// backward for any timezone ahead of UTC, e.g. IST — that was the "clicking a
+// date jumps to another day" bug).
+function dateKey(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
 function loadDay(key){ try{ return JSON.parse(localStorage.getItem('stack:'+key)) || {}; }catch(e){ return {}; } }
 function saveDay(key, data){ localStorage.setItem('stack:'+key, JSON.stringify(data)); }
 function isWorkoutDay(key){ return loadDay(key).__workout === true; }
@@ -343,7 +506,8 @@ function isChecked(key, id){ return !!loadDay(key)[id]; }
 function setChecked(key, id, val){ const d = loadDay(key); d[id] = val; saveDay(key, d); }
 
 // ---- App state ----
-let ITEMS = loadItems();
+let ITEMS = [];
+let SCHEDULE = {};
 let viewingDate = new Date();
 let weekStart = mondayOf(new Date());
 let editMode = false;
@@ -574,7 +738,7 @@ document.getElementById('itemSaveBtn').addEventListener('click', ()=>{
           }
         }
       }
-      saveItems(ITEMS);
+      commitItems(ITEMS);
       closeItemModal();
       renderAll();
     }
@@ -590,10 +754,66 @@ document.getElementById('itemDeleteBtn').addEventListener('click', ()=>{
     'Delete',
     ()=>{
       ITEMS = ITEMS.filter(i=>i.id!==modalEditingId);
-      saveItems(ITEMS);
+      commitItems(ITEMS);
       closeItemModal();
       renderAll();
     }
+  );
+});
+
+// ---- Settings modal ----
+function openSettingsModal(){
+  const cfg = getGhConfig() || {};
+  let guessOwner = cfg.owner || '';
+  let guessRepo = cfg.repo || '';
+  if(!guessOwner && location.hostname.endsWith('.github.io')){
+    guessOwner = location.hostname.split('.')[0];
+  }
+  if(!guessRepo && location.pathname.split('/').filter(Boolean)[0]){
+    guessRepo = location.pathname.split('/').filter(Boolean)[0];
+  }
+  document.getElementById('gh-owner').value = guessOwner;
+  document.getElementById('gh-repo').value = guessRepo;
+  document.getElementById('gh-branch').value = cfg.branch || 'main';
+  document.getElementById('gh-token').value = cfg.token || '';
+
+  Object.keys(DEFAULT_SCHEDULE).forEach(k=>{
+    const el = document.getElementById('sch-'+k);
+    if(el) el.value = SCHEDULE[k] || DEFAULT_SCHEDULE[k];
+  });
+
+  document.getElementById('settingsOverlay').classList.add('show');
+}
+function closeSettingsModal(){ document.getElementById('settingsOverlay').classList.remove('show'); }
+
+document.getElementById('gh-cancel').addEventListener('click', closeSettingsModal);
+document.getElementById('sch-cancel').addEventListener('click', closeSettingsModal);
+document.getElementById('gh-save').addEventListener('click', ()=>{
+  const owner = document.getElementById('gh-owner').value.trim();
+  const repo = document.getElementById('gh-repo').value.trim();
+  const branch = document.getElementById('gh-branch').value.trim() || 'main';
+  const token = document.getElementById('gh-token').value.trim();
+  saveGhConfig({owner, repo, branch, token});
+  showToast(owner && repo && token ? '✓ Sync settings saved' : 'Settings saved (incomplete — sync stays off)');
+});
+document.getElementById('gh-clear').addEventListener('click', ()=>{
+  askConfirm('Clear saved token?', 'This removes the GitHub token from this browser. Cabinet edits will keep saving locally, but stop syncing to your repo until you add a token again.', 'Clear token', ()=>{
+    const cfg = getGhConfig() || {};
+    saveGhConfig({...cfg, token:''});
+    document.getElementById('gh-token').value = '';
+    showToast('Token cleared');
+  });
+});
+document.getElementById('sch-save').addEventListener('click', ()=>{
+  const next = {};
+  Object.keys(DEFAULT_SCHEDULE).forEach(k=>{
+    next[k] = document.getElementById('sch-'+k).value || DEFAULT_SCHEDULE[k];
+  });
+  askConfirm(
+    'Update notification times?',
+    'Are you sure you want to change your reminder times? This updates data/schedule.json and takes effect on the next 5-minute check.',
+    'Edit schedule',
+    ()=>{ SCHEDULE = next; commitSchedule(SCHEDULE); }
   );
 });
 
@@ -639,6 +859,9 @@ document.body.addEventListener('click', (e)=>{
     return;
   }
 
+  // settings toggle
+  if(e.target.closest('#settingsToggle')){ openSettingsModal(); return; }
+
   // edit mode toggle
   if(e.target.closest('#editToggle')){
     editMode = !editMode;
@@ -666,7 +889,7 @@ document.body.addEventListener('click', (e)=>{
       askConfirm('Delete this supplement?',
         `Are you sure you want to remove "${it.name}" from your cabinet?`,
         'Delete',
-        ()=>{ ITEMS = ITEMS.filter(i=>i.id!==id); saveItems(ITEMS); renderAll(); });
+        ()=>{ ITEMS = ITEMS.filter(i=>i.id!==id); commitItems(ITEMS); renderAll(); });
       return;
     }
     if(act==='up' || act==='down'){
@@ -676,14 +899,14 @@ document.body.addEventListener('click', (e)=>{
       if(swapIdx<0 || swapIdx>=list.length) return;
       const other = list[swapIdx];
       const tmp = it.order; it.order = other.order; other.order = tmp;
-      saveItems(ITEMS);
+      commitItems(ITEMS);
       renderAll();
       return;
     }
   }
 });
 
-renderAll();
+Promise.all([initItems(), initSchedule()]).then(renderAll);
 </script>
 </body>
 </html>
