@@ -22,17 +22,6 @@
     "order": 1
   },
   {
-    "id": "protein",
-    "name": "Protein powder",
-    "dose": "1 scoop (~24-30g)",
-    "section": "postworkout",
-    "freq": {
-      "type": "daily"
-    },
-    "note": "Extra scoop on non-workout days only if diet falls short",
-    "order": 1
-  },
-  {
     "id": "creatine",
     "name": "Creatine monohydrate",
     "dose": "3-5g",
