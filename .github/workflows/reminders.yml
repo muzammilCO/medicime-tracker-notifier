@@ -1,0 +1,99 @@
+name: Reminders (dynamic, IST)
+
+# One workflow handles every notification. It runs every 5 minutes, reads
+# your notification times straight from data/schedule.json (in IST, no UTC
+# math needed) and your supplement list from data/items.json, and sends only
+# the notification(s) whose scheduled time matches right now.
+#
+# Change WHEN something fires -> edit data/schedule.json (times are IST).
+# Change WHAT it says          -> edit data/items.json (or use the app's
+#                                  Manage Cabinet / Sync settings screens,
+#                                  which sync here automatically once you've
+#                                  connected the sync Worker — see README).
+# Neither requires touching this file.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Send all notifications now, ignoring scheduled times (for testing)'
+        type: boolean
+        default: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check schedule and send due notifications
+        env:
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          set -e
+          IST_TIME=$(TZ='Asia/Kolkata' date +%H:%M)
+          IST_WEEKDAY=$(TZ='Asia/Kolkata' date +%w)   # 0 = Sunday ... 6 = Saturday
+          echo "IST time now: $IST_TIME (weekday $IST_WEEKDAY)"
+
+          due() {
+            # $1 = the schedule.json key to check against current IST time
+            if [ "$FORCE" = "true" ]; then return 0; fi
+            TARGET=$(jq -r --arg k "$1" '.[$k] // empty' data/schedule.json)
+            [ -n "$TARGET" ] && [ "$IST_TIME" = "$TARGET" ]
+          }
+
+          send_daily_section() {
+            # $1 = section name in items.json, $2 = notification title
+            BODY=$(jq -r --arg s "$1" '
+              [.[] | select(.section==$s and .freq.type=="daily")]
+              | sort_by(.order) | map("• " + .name + " — " + .dose) | join("\n")
+            ' data/items.json)
+            [ -z "$BODY" ] && { echo "Nothing scheduled for $1, skipping."; return; }
+            curl -s -H "Title: $2" -H "Tags: pill" -d "$BODY" "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}"
+          }
+
+          send_weekday() {
+            # $1 = weekday number (0=Sun..6=Sat), $2 = notification title
+            BODY=$(jq -r --argjson w "$1" '
+              [.[] | select(.freq.type=="weekly" and .freq.weekday==$w)]
+              | sort_by(.order)
+              | map("• " + .name + " — " + .dose + (if .note then " (" + .note + ")" else "" end))
+              | join("\n")
+            ' data/items.json)
+            [ -z "$BODY" ] && { echo "Nothing scheduled for weekday $1, skipping."; return; }
+            curl -s -H "Title: $2" -H "Priority: high" -H "Tags: calendar,pill" -d "$BODY" "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}"
+          }
+
+          send_workout_section() {
+            # $1 = section name (preworkout/postworkout), $2 = notification title
+            BODY=$(jq -r --arg s "$1" '
+              [.[] | select(.section==$s)]
+              | sort_by(.order) | map("• " + .name + " — " + .dose) | join("\n")
+            ' data/items.json)
+            [ -z "$BODY" ] && { echo "Nothing scheduled for $1, skipping."; return; }
+            curl -s -H "Title: $2" -H "Tags: muscle" -d "$BODY" "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}"
+          }
+
+          due morning      && send_daily_section morning    "Morning stack"
+          due evening       && send_daily_section evening    "Evening stack"
+          due workout_pre   && send_workout_section preworkout  "Pre-workout"
+          due workout_post  && send_workout_section postworkout "Post-workout"
+
+          DAY_NAMES=(Sunday Monday Tuesday Wednesday Thursday Friday Saturday)
+
+          if [ "$FORCE" = "true" ]; then
+            # Test mode: send the weekly notification for every weekday that
+            # has a configured time, regardless of what day it actually is.
+            for WD in $(jq -r '.weekly // {} | keys[]' data/schedule.json); do
+              send_weekday "$WD" "Weekly dose - ${DAY_NAMES[$WD]} (test)"
+            done
+          else
+            WEEKLY_TARGET=$(jq -r --arg wd "$IST_WEEKDAY" '.weekly[$wd] // empty' data/schedule.json)
+            if [ -n "$WEEKLY_TARGET" ] && [ "$IST_TIME" = "$WEEKLY_TARGET" ]; then
+              send_weekday "$IST_WEEKDAY" "Weekly dose - ${DAY_NAMES[$IST_WEEKDAY]}"
+            fi
+          fi
+
+          echo "Done."
