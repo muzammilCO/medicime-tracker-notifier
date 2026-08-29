@@ -13,6 +13,11 @@
       "morning": "08:00",
       "afternoon": "14:00",
       "night": "20:00"
+    },
+    "6": {
+      "morning": "08:00",
+      "afternoon": "14:00",
+      "night": "21:45"
     }
   }
 }
