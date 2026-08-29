@@ -378,7 +378,9 @@
         "note": "Topping up a fruit-based diet",
         "order": 2
       }
-    ]
+    ],
+    "__workout": false,
+    "bcomplex": true
   },
   "2026-08-27": {
     "__items": [
