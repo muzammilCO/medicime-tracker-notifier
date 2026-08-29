@@ -1,15 +1,5 @@
 [
   {
-    "id": "bcomplex",
-    "name": "B-complex with B12",
-    "dose": "1 tablet",
-    "section": "morning",
-    "freq": {
-      "type": "daily"
-    },
-    "order": 2
-  },
-  {
     "id": "shilajit",
     "name": "Shilajit",
     "dose": "500mg, 1 capsule",
