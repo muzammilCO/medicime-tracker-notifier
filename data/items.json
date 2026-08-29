@@ -71,7 +71,7 @@
     "section": "weekly",
     "freq": {
       "type": "weekly",
-      "weekday": 0,
+      "weekday": 6,
       "slot": "morning"
     },
     "note": "Correction phase, 8-10 weeks only",
