@@ -102,8 +102,8 @@
     "section": "weekly",
     "freq": {
       "type": "weekly",
-      "weekday": 6,
-      "slot": "night"
+      "weekday": 0,
+      "slot": "afternoon"
     },
     "note": "Correction phase, 8–10 weeks only",
     "tag": "Phase 1",
