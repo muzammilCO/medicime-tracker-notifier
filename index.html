@@ -212,9 +212,12 @@
       <div class="switch" id="workoutSwitch"><div class="knob"></div></div>
     </div>
 
-    <div id="workoutDescriptionBanner" style="display:none;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px 16px;margin-bottom:16px;">
-      <div class="strip-label" style="margin-bottom:5px;">Workout details</div>
-      <div id="workoutDescriptionText" style="font-size:13.5px;line-height:1.5;white-space:pre-wrap;"></div>
+    <div id="workoutDetailsBox" style="display:none;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px 16px;margin-bottom:16px;">
+      <div class="strip-label" style="margin-bottom:5px;">Workout details for this day</div>
+      <textarea id="workoutDetailsInput" rows="3"
+        placeholder="What is today's workout? e.g. Upper body + 20 min cardio"
+        style="width:100%;box-sizing:border-box;resize:vertical;"></textarea>
+      <div class="item-note" style="margin-top:6px;">Saved as part of this day's record.</div>
     </div>
 
     <div class="section"><div class="section-head"><div class="section-head-left"><span class="icon">AM</span><h2>Morning</h2></div></div>
@@ -251,7 +254,7 @@
     Cabinet edits, notification times, and check-off history sync across every device that has
     the Worker URL + PIN set in ⚙ Sync settings; without that, this device only saves locally.<br>
     Notification wording updates automatically from your cabinet — nothing to edit in the workflow file.<br>
-Workout days and workout details are managed from ⚙ Sync settings and sync to data/workout-settings.json.<br>
+Workout days are managed from ⚙ Sync settings; daily workout details are saved in each day's history. Notification ON/OFF is also managed there.<br>
     Past days are locked by default so cabinet edits and new check-offs can't change already-logged
     history by accident — unlock a specific past day from its banner to correct it.<br>
     Review this stack with a doctor periodically, especially around the Vitamin D3 phase change.
@@ -355,6 +358,20 @@ Workout days and workout details are managed from ⚙ Sync settings and sync to 
       <div class="field"><label>Post-workout</label><input type="time" id="sch-workout_post" step="300"></div>
     </div>
 
+    <div class="toggle-row" style="margin: 12px 0 4px;">
+      <div>
+        <div class="t-label">Notifications</div>
+        <div class="t-sub" id="notificationToggleSub">Enable or disable all reminder notifications</div>
+      </div>
+      <div class="switch" id="notificationSwitch" role="switch" aria-checked="true" tabindex="0">
+        <div class="knob"></div>
+      </div>
+    </div>
+    <p class="item-note" style="margin: 4px 0 12px;">
+      When OFF, GitHub will not send reminder notifications. Your medicine
+      history and schedules are unchanged.
+    </p>
+
     <div style="border-top:1px solid var(--line); margin: 16px 0 14px;"></div>
     <label style="display:block; font-size: 12px; color: var(--ink-soft); margin-bottom: 4px;
       font-family:'IBM Plex Mono', monospace; text-transform:uppercase; letter-spacing:.04em;">Weekly item</label>
@@ -376,18 +393,13 @@ Workout days and workout details are managed from ⚙ Sync settings and sync to 
     <p class="item-note" style="margin: -6px 0 14px;">
       Choose your normal workout days in advance. These days become the default
       workout days for future dates; you can still override an individual day
-      from the main checklist.
+      from the main checklist. Workout details are recorded separately for
+      each date directly below the workout toggle.
     </p>
 
     <div class="field">
       <label>Workout days</label>
       <div id="workday-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;"></div>
-    </div>
-
-    <div class="field">
-      <label>Workout details</label>
-      <textarea id="workout-description" rows="4"
-        placeholder="e.g. Upper body + 20 min cardio&#10;Focus: progressive overload..."></textarea>
     </div>
 
     <div class="modal-actions">
@@ -458,6 +470,9 @@ const DEFAULT_WORKOUT_SETTINGS = {
 };
 
 let WORKOUT_SETTINGS = JSON.parse(JSON.stringify(DEFAULT_WORKOUT_SETTINGS));
+
+const DEFAULT_NOTIFICATION_SETTINGS = { enabled: true };
+let NOTIFICATION_SETTINGS = { ...DEFAULT_NOTIFICATION_SETTINGS };
 
 // ---- Item storage: data/items.json in the repo is the source of truth,
 // shared by this web app AND the GitHub Actions notifications. localStorage
@@ -559,6 +574,58 @@ async function commitWorkoutSettings(settings){
     showToast('Saved locally — sync failed: ' + res.reason, true);
   }
 }
+async function initNotificationSettings(){
+  if(!isDirty('notification-settings')){
+    try{
+      const res = await fetch('data/notification-settings.json', {cache:'no-store'});
+      if(res.ok){
+        const remote = await res.json();
+        NOTIFICATION_SETTINGS = {
+          ...DEFAULT_NOTIFICATION_SETTINGS,
+          ...remote,
+          enabled: remote.enabled !== false
+        };
+        localStorage.setItem('stack:notification-settings-cache', JSON.stringify(NOTIFICATION_SETTINGS));
+        return;
+      }
+    }catch(e){}
+  }
+  try{
+    const cached = localStorage.getItem('stack:notification-settings-cache');
+    if(cached){
+      const parsed = JSON.parse(cached);
+      NOTIFICATION_SETTINGS = {
+        ...DEFAULT_NOTIFICATION_SETTINGS,
+        ...parsed,
+        enabled: parsed.enabled !== false
+      };
+      return;
+    }
+  }catch(e){}
+  NOTIFICATION_SETTINGS = { ...DEFAULT_NOTIFICATION_SETTINGS };
+}
+
+async function commitNotificationSettings(settings){
+  NOTIFICATION_SETTINGS = {
+    ...DEFAULT_NOTIFICATION_SETTINGS,
+    ...settings,
+    enabled: settings.enabled !== false
+  };
+  localStorage.setItem('stack:notification-settings-cache', JSON.stringify(NOTIFICATION_SETTINGS));
+
+  const res = await syncJsonToGithub('data/notification-settings.json', NOTIFICATION_SETTINGS);
+  if(res.ok){
+    clearDirty('notification-settings');
+    showToast(NOTIFICATION_SETTINGS.enabled ? '✓ Notifications enabled' : '✓ Notifications disabled');
+  }else if(res.reason==='not-configured'){
+    markDirty('notification-settings');
+    showToast('Saved locally — add Worker URL + PIN to sync');
+  }else{
+    markDirty('notification-settings');
+    showToast('Saved locally — sync failed: ' + res.reason, true);
+  }
+}
+
 function saveItemsLocal(items){ localStorage.setItem('stack:items-cache', JSON.stringify(items)); }
 
 // ---- Sync config: a Worker URL + short PIN, stored locally. The real
@@ -684,6 +751,19 @@ function setWorkoutDay(key, val){
   d.__workout = val;
   saveDay(key, d);
 }
+
+function workoutDetailsForDate(key){
+  return loadDay(key).__workout_details || '';
+}
+
+function setWorkoutDetails(key, text){
+  const d = loadDay(key);
+  const value = String(text || '').trim();
+  if(value) d.__workout_details = value;
+  else delete d.__workout_details;
+  saveDay(key, d);
+}
+
 function isChecked(key, id){ return !!loadDay(key)[id]; }
 function setChecked(key, id, val){ const d = loadDay(key); d[id] = val; saveDay(key, d); }
 
@@ -844,10 +924,11 @@ function renderChecklist(){
   sw.style.cursor = locked ? 'not-allowed' : 'pointer';
 
   const workout = isWorkoutDay(key);
-  const descBanner = document.getElementById('workoutDescriptionBanner');
-  const descText = document.getElementById('workoutDescriptionText');
-  descBanner.style.display = workout && WORKOUT_SETTINGS.description ? '' : 'none';
-  descText.textContent = workout ? (WORKOUT_SETTINGS.description || '') : '';
+  const detailsBox = document.getElementById('workoutDetailsBox');
+  const detailsInput = document.getElementById('workoutDetailsInput');
+  detailsBox.style.display = workout ? '' : 'none';
+  detailsInput.value = workoutDetailsForDate(key);
+  detailsInput.disabled = locked;
 
   ['morning','preworkout','postworkout','evening','weekly'].forEach(section=>{
     const container = document.getElementById('list-'+section);
@@ -1081,7 +1162,12 @@ function openSettingsModal(){
     `;
     grid.appendChild(label);
   });
-  document.getElementById('workout-description').value = WORKOUT_SETTINGS.description || '';
+  const ns = document.getElementById('notificationSwitch');
+  const notificationsOn = NOTIFICATION_SETTINGS.enabled !== false;
+  ns.classList.toggle('on', notificationsOn);
+  ns.setAttribute('aria-checked', notificationsOn ? 'true' : 'false');
+  document.getElementById('notificationToggleSub').textContent =
+    notificationsOn ? 'Notifications are ON' : 'Notifications are OFF';
 
   document.getElementById('settingsOverlay').classList.add('show');
 }
@@ -1123,7 +1209,7 @@ SLOTS.forEach(sl=>{
 function closeSettingsModal(){ document.getElementById('settingsOverlay').classList.remove('show'); }
 
 function refreshDirtyNote(){
-  const dirtyKinds = ['items','schedule','logs','workout-settings'].filter(isDirty);
+  const dirtyKinds = ['items','schedule','logs','workout-settings','notification-settings'].filter(isDirty);
   const note = document.getElementById('dirty-note');
   const row = document.getElementById('retry-sync-row');
   if(dirtyKinds.length){
@@ -1163,6 +1249,7 @@ document.getElementById('gh-retry').addEventListener('click', async ()=>{
   if(isDirty('schedule')) await commitSchedule(SCHEDULE);
   if(isDirty('logs')) await commitLogsToGithub();
   if(isDirty('workout-settings')) await commitWorkoutSettings(WORKOUT_SETTINGS);
+  if(isDirty('notification-settings')) await commitNotificationSettings(NOTIFICATION_SETTINGS);
   refreshDirtyNote();
 });
 document.getElementById('sch-save').addEventListener('click', ()=>{
@@ -1182,17 +1269,32 @@ document.getElementById('sch-save').addEventListener('click', ()=>{
   );
 });
 
+function toggleNotifications(){
+  const enabled = !(NOTIFICATION_SETTINGS.enabled !== false);
+  const sw = document.getElementById('notificationSwitch');
+  sw.classList.toggle('on', enabled);
+  sw.setAttribute('aria-checked', enabled ? 'true' : 'false');
+  document.getElementById('notificationToggleSub').textContent =
+    enabled ? 'Notifications are ON' : 'Notifications are OFF';
+  commitNotificationSettings({enabled});
+}
+
+document.getElementById('notificationSwitch').addEventListener('click', toggleNotifications);
+document.getElementById('notificationSwitch').addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter' || e.key === ' '){
+    e.preventDefault();
+    toggleNotifications();
+  }
+});
+
 document.getElementById('workout-save').addEventListener('click', ()=>{
   const days = {};
   document.querySelectorAll('.workday-check').forEach(cb=>{
     days[String(cb.dataset.weekday)] = cb.checked;
   });
 
-  const description = document.getElementById('workout-description').value.trim();
-
   const next = {
-    days,
-    description
+    days
   };
 
   askConfirm(
@@ -1201,6 +1303,19 @@ document.getElementById('workout-save').addEventListener('click', ()=>{
     'Workout settings',
     ()=>{ commitWorkoutSettings(next); renderAll(); }
   );
+});
+
+let workoutDetailsTimer = null;
+document.getElementById('workoutDetailsInput').addEventListener('input', (e)=>{
+  const vd = new Date(viewingDate); vd.setHours(0,0,0,0);
+  const key = dateKey(vd);
+  const isPast = vd < new Date(new Date().setHours(0,0,0,0));
+  if(isPast && !pastEditUnlocked) return;
+  clearTimeout(workoutDetailsTimer);
+  const value = e.target.value;
+  workoutDetailsTimer = setTimeout(()=>{
+    setWorkoutDetails(key, value);
+  }, 500);
 });
 
 // ---- Event delegation ----
@@ -1311,7 +1426,7 @@ document.body.addEventListener('click', (e)=>{
   }
 });
 
-Promise.all([initItems(), initSchedule(), initWorkoutSettings(), initLogs()]).then(renderAll);
+Promise.all([initItems(), initSchedule(), initWorkoutSettings(), initNotificationSettings(), initLogs()]).then(renderAll);
 </script>
 </body>
 </html>
