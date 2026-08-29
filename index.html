@@ -81,6 +81,7 @@
   .view-banner .vb-text b{ color: var(--ink); font-weight:600; }
   .vb-today-btn{ font-family:'IBM Plex Mono', monospace; font-size: 11px; background:none; border:1px solid var(--line);
     color: var(--teal); padding: 5px 9px; border-radius: 8px; cursor:pointer; }
+  .vb-today-btn.unlocked{ background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
 
   /* ---- workout toggle ---- */
   .toggle-row{ display:flex; align-items:center; justify-content:space-between; background: var(--card);
@@ -197,7 +198,10 @@
   <div id="checklistView">
     <div class="view-banner">
       <div class="vb-text" id="vbText"></div>
-      <button class="vb-today-btn" id="jumpToday" style="display:none;">Today</button>
+      <div style="display:flex; gap:8px;">
+        <button class="vb-today-btn" id="pastEditToggle" style="display:none;">🔒 Locked</button>
+        <button class="vb-today-btn" id="jumpToday" style="display:none;">Today</button>
+      </div>
     </div>
 
     <div class="toggle-row">
@@ -239,9 +243,11 @@
   </div>
 
   <footer>
-    Data is stored only in this browser (localStorage) — nothing syncs across devices.<br>
-    Editing a name here does not change wording in your phone push notifications; update the
-    matching <code>.github/workflows/*.yml</code> file in your repo for that.<br>
+    Cabinet edits, notification times, and check-off history sync across every device that has
+    the Worker URL + PIN set in ⚙ Sync settings; without that, this device only saves locally.<br>
+    Notification wording updates automatically from your cabinet — nothing to edit in the workflow file.<br>
+    Past days are locked by default so cabinet edits and new check-offs can't change already-logged
+    history by accident — unlock a specific past day from its banner to correct it.<br>
     Review this stack with a doctor periodically, especially around the Vitamin D3 phase change.
   </footer>
 
@@ -281,6 +287,15 @@
         </select>
       </div>
     </div>
+    <div class="field-row" id="f-slot-wrap">
+      <div class="field"><label>Time of day</label>
+        <select id="f-slot">
+          <option value="morning">Morning</option>
+          <option value="afternoon">Afternoon</option>
+          <option value="night">Night</option>
+        </select>
+      </div>
+    </div>
     <div class="field"><label>Note (optional)</label><input type="text" id="f-note" placeholder="e.g. Take with a fatty meal"></div>
     <div class="field"><label>Tag (optional)</label><input type="text" id="f-tag" placeholder="e.g. Phase 2"></div>
     <div class="modal-actions">
@@ -302,6 +317,7 @@
       PIN.
     </p>
     <div class="field"><label>Worker URL</label><input type="text" id="gh-workerurl" placeholder="https://your-worker.your-name.workers.dev"></div>
+    <p class="item-note" style="margin-top:-8px;">Defaults to <code>supplement-sync.muzammil-coe-219-dtu.workers.dev</code> — clear the field and save if you ever point this at a different Worker.</p>
     <div class="field"><label>Sync PIN</label><input type="text" id="gh-pin" placeholder="e.g. 4 to 8 characters, set when you deployed the worker"></div>
     <p class="item-note">
       The PIN is stored only in this browser's local storage and sent only to
@@ -334,11 +350,15 @@
       font-family:'IBM Plex Mono', monospace; text-transform:uppercase; letter-spacing:.04em;">Weekly item</label>
     <select id="wk-med-select" style="width:100%; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line);
       background: var(--bg); font-family:'Inter', sans-serif; font-size: 14px; color: var(--ink); margin-bottom: 10px;"></select>
+    <div class="field"><label>Day (from this item's schedule)</label><input type="text" id="wk-day-display" disabled></div>
+    <p class="item-note" style="margin: -4px 0 8px;">This item notifies in its <b id="wk-slot-display">Morning</b> slot. Set all three
+      slot times for that weekday below — every item scheduled for the same weekday + slot shares one notification.</p>
     <div class="field-row">
-      <div class="field"><label>Day (from this item's schedule)</label><input type="text" id="wk-day-display" disabled></div>
-      <div class="field"><label>Notify at</label><input type="time" id="wk-time" step="300"></div>
+      <div class="field"><label>Morning</label><input type="time" id="wk-time-morning" step="300"></div>
+      <div class="field"><label>Afternoon</label><input type="time" id="wk-time-afternoon" step="300"></div>
+      <div class="field"><label>Night</label><input type="time" id="wk-time-night" step="300"></div>
     </div>
-    <p class="item-note" id="wk-shared-note">Other items on the same weekday share this time.</p>
+    <p class="item-note" id="wk-shared-note">Other items on the same weekday share these times.</p>
 
     <div class="modal-actions">
       <button class="btn btn-secondary" id="sch-cancel">Close</button>
@@ -378,14 +398,26 @@ const DEFAULT_ITEMS = [
   { id:'omega3',    name:'Omega-3 (EPA/DHA)', dose:'1–2 capsules', section:'evening', freq:{type:'daily'}, order:2 },
   { id:'maglycid3', name:'Maglyci-D3 (Mg Glycinate 250mg + D3 1000IU)', dose:'1 capsule', section:'evening', freq:{type:'daily'}, note:'Start only after the D3 60,000 IU correction phase ends', tag:'Phase 2', order:3 },
 
-  { id:'d3high',    name:'Vitamin D3 60,000 IU', dose:'1 dose', section:'weekly', freq:{type:'weekly', weekday:0}, note:'Correction phase, 8–10 weeks only', tag:'Phase 1', order:1 },
-  { id:'vitc',      name:'Vitamin C 500mg (chewable)', dose:'1 tablet', section:'weekly', freq:{type:'weekly', weekday:3}, note:'Topping up a fruit-based diet', order:2 },
+  { id:'d3high',    name:'Vitamin D3 60,000 IU', dose:'1 dose', section:'weekly', freq:{type:'weekly', weekday:0, slot:'morning'}, note:'Correction phase, 8–10 weeks only', tag:'Phase 1', order:1 },
+  { id:'vitc',      name:'Vitamin C 500mg (chewable)', dose:'1 tablet', section:'weekly', freq:{type:'weekly', weekday:3, slot:'morning'}, note:'Topping up a fruit-based diet', order:2 },
 ];
+
+// Every device defaults to this Worker unless the field is cleared and saved
+// with something else — see README "Cross-device sync".
+const DEFAULT_WORKER_URL = 'https://supplement-sync.muzammil-coe-219-dtu.workers.dev/';
+
+const SLOTS = ['morning','afternoon','night'];
+const SLOT_LABELS = { morning:'Morning', afternoon:'Afternoon', night:'Night' };
+const DEFAULT_SLOT_TIMES = { morning:'08:00', afternoon:'14:00', night:'20:00' };
 
 const DEFAULT_SCHEDULE = {
   morning: '07:30', evening: '20:30',
   workout_pre: '18:00', workout_post: '19:15',
-  weekly: { '0': '08:00', '3': '08:00' } // weekday number -> IST time
+  // weekday number -> { morning, afternoon, night } IST times
+  weekly: {
+    '0': { morning:'08:00', afternoon:'14:00', night:'20:00' },
+    '3': { morning:'08:00', afternoon:'14:00', night:'20:00' }
+  }
 };
 
 // ---- Item storage: data/items.json in the repo is the source of truth,
@@ -534,6 +566,40 @@ function setWorkoutDay(key, val){ const d = loadDay(key); d.__workout = val; sav
 function isChecked(key, id){ return !!loadDay(key)[id]; }
 function setChecked(key, id, val){ const d = loadDay(key); d[id] = val; saveDay(key, d); }
 
+// ---- Freezing past days against later cabinet edits ----
+// A day's own log entry (LOGS[key]) can carry an __items snapshot: the
+// cabinet exactly as it stood while that day was still "today". Once a day
+// is in the past, we render it from that snapshot (if we have one) instead
+// of the live cabinet, so editing/adding/removing supplements today or
+// later never rewrites what an already-past day shows or counts as
+// "scheduled". Today and future days always use the live cabinet.
+function todayKey(){ return dateKey(new Date()); }
+function itemsSourceForDate(date){
+  const key = dateKey(date);
+  if(key < todayKey()){
+    const snap = LOGS[key] && LOGS[key].__items;
+    if(snap) return snap;
+  }
+  return ITEMS;
+}
+// Runs on load and before every render: any day that has already slipped
+// into the past but has no snapshot yet (first run after this feature, or a
+// day that only just became "yesterday") gets one taken now, from whatever
+// the cabinet currently looks like. From that point on it's frozen — later
+// cabinet edits can't touch it. Days with no log entry at all are left
+// alone (nothing to freeze; they'll fall back to best-effort live data).
+function ensurePastSnapshots(){
+  const tk = todayKey();
+  let changed = false;
+  Object.keys(LOGS).forEach(key=>{
+    if(key < tk && LOGS[key] && !LOGS[key].__items){
+      LOGS[key].__items = JSON.parse(JSON.stringify(ITEMS));
+      changed = true;
+    }
+  });
+  if(changed) localStorage.setItem('stack:logs-cache', JSON.stringify(LOGS));
+}
+
 function scheduleLogsCommit(){
   clearTimeout(logsCommitTimer);
   logsCommitTimer = setTimeout(commitLogsToGithub, 2500); // batch quick taps into one commit
@@ -571,6 +637,7 @@ let SCHEDULE = {};
 let viewingDate = new Date();
 let weekStart = mondayOf(new Date());
 let editMode = false;
+let pastEditUnlocked = false; // resets to locked every time viewingDate changes
 
 function mondayOf(d){
   const dt = new Date(d);
@@ -601,7 +668,7 @@ function renderBlister(){
   for(let i=0;i<7;i++){
     const d = new Date(weekStart); d.setDate(weekStart.getDate()+i);
     const key = dateKey(d);
-    const scheduled = ITEMS.filter(it=>isActiveForDate(it, d));
+    const scheduled = itemsSourceForDate(d).filter(it=>isActiveForDate(it, d));
     const dayData = loadDay(key);
     const doneCount = scheduled.filter(it=>dayData[it.id]).length;
     const total = scheduled.length;
@@ -632,6 +699,9 @@ function renderChecklist(){
   const key = dateKey(vd);
   const isToday = sameDay(vd, today);
   const isFuture = vd > today;
+  const isPast = !isToday && !isFuture;
+  const locked = isPast && !pastEditUnlocked;
+  const dayItems = itemsSourceForDate(vd);
 
   const vbText = document.getElementById('vbText');
   vbText.innerHTML = isToday
@@ -639,22 +709,31 @@ function renderChecklist(){
     : `Viewing <b>${isFuture ? 'upcoming' : 'past'} day</b> — ${fmtDate(vd)}`;
   document.getElementById('jumpToday').style.display = isToday ? 'none' : 'inline-block';
 
+  const pastToggleBtn = document.getElementById('pastEditToggle');
+  pastToggleBtn.style.display = isPast ? 'inline-block' : 'none';
+  pastToggleBtn.textContent = pastEditUnlocked ? '🔓 Unlocked — tap to lock' : '🔒 Locked — tap to edit';
+  pastToggleBtn.classList.toggle('unlocked', pastEditUnlocked);
+
   document.getElementById('workoutLabel').textContent = isFuture ? 'Planned workout day' : 'Workout day';
   const sw = document.getElementById('workoutSwitch');
   sw.classList.toggle('on', isWorkoutDay(key));
+  sw.classList.toggle('locked', locked);
+  sw.style.opacity = locked ? '0.45' : '';
+  sw.style.cursor = locked ? 'not-allowed' : 'pointer';
 
   const workout = isWorkoutDay(key);
   ['morning','preworkout','postworkout','evening','weekly'].forEach(section=>{
     const container = document.getElementById('list-'+section);
     container.innerHTML = '';
-    const items = itemsForSection(section);
+    const items = dayItems.filter(it=>it.section===section).sort((a,b)=>a.order-b.order);
     let rendered = 0;
     items.forEach(it=>{
       const active = isActiveForDate(it, vd);
       if(it.freq.type==='workout' && !workout) return; // hide entirely if not a workout day
       rendered++;
       const checked = active && !isFuture && isChecked(key, it.id);
-      const canCheck = active && !isFuture;
+      const canCheck = active && !isFuture && !locked;
+      const slotTag = it.freq.type==='weekly' && it.freq.slot ? SLOT_LABELS[it.freq.slot] : '';
 
       const row = document.createElement('div');
       row.className = 'item' + (canCheck ? '' : ' disabled');
@@ -665,7 +744,9 @@ function renderChecklist(){
           <div class="item-dose">${escapeHtml(it.dose||'')}</div>
           ${it.note ? `<div class="item-note">${escapeHtml(it.note)}</div>` : ''}
           ${it.tag ? `<span class="pill-tag">${escapeHtml(it.tag)}</span>` : ''}
+          ${slotTag ? `<span class="pill-tag">${slotTag}</span>` : ''}
           ${isFuture && active ? `<span class="pill-tag future">Upcoming — can't log yet</span>` : ''}
+          ${locked && active && !isFuture ? `<span class="pill-tag future">Locked — unlock to edit this past day</span>` : ''}
           ${!active && it.freq.type!=='workout' ? `<span class="pill-tag future">Not scheduled this day</span>` : ''}
         </div>`;
       container.appendChild(row);
@@ -695,7 +776,7 @@ function renderCabinet(){
       row.className = 'item';
       const freqLabel = it.freq.type==='daily' ? 'Daily'
         : it.freq.type==='workout' ? 'Workout days'
-        : 'Weekly · ' + DAY_NAMES[it.freq.weekday];
+        : 'Weekly · ' + DAY_NAMES[it.freq.weekday] + ' · ' + (SLOT_LABELS[it.freq.slot] || 'Morning');
       row.innerHTML = `
         <div class="item-controls">
           <div class="ctrl-row">
@@ -719,6 +800,7 @@ function renderCabinet(){
 }
 
 function renderAll(){
+  ensurePastSnapshots();
   renderBlister();
   if(editMode) renderCabinet(); else renderChecklist();
 }
@@ -750,6 +832,7 @@ function openItemModal(mode, item, defaultSection){
   document.getElementById('f-section').value = item ? item.section : (defaultSection||'morning');
   document.getElementById('f-freq').value = item ? item.freq.type : 'daily';
   document.getElementById('f-weekday').value = item && item.freq.type==='weekly' ? item.freq.weekday : 0;
+  document.getElementById('f-slot').value = item && item.freq.type==='weekly' ? (item.freq.slot||'morning') : 'morning';
   document.getElementById('f-note').value = item ? (item.note||'') : '';
   document.getElementById('f-tag').value = item ? (item.tag||'') : '';
   document.getElementById('itemDeleteBtn').style.display = mode==='edit' ? 'inline-block' : 'none';
@@ -758,8 +841,9 @@ function openItemModal(mode, item, defaultSection){
 }
 function closeItemModal(){ document.getElementById('itemOverlay').classList.remove('show'); }
 function toggleWeekdayField(){
-  document.getElementById('f-weekday-wrap').style.display =
-    document.getElementById('f-freq').value === 'weekly' ? '' : 'none';
+  const isWeekly = document.getElementById('f-freq').value === 'weekly';
+  document.getElementById('f-weekday-wrap').style.display = isWeekly ? '' : 'none';
+  document.getElementById('f-slot-wrap').style.display = isWeekly ? '' : 'none';
 }
 
 document.getElementById('f-freq').addEventListener('change', toggleWeekdayField);
@@ -772,9 +856,10 @@ document.getElementById('itemSaveBtn').addEventListener('click', ()=>{
   const section = document.getElementById('f-section').value;
   const freqType = document.getElementById('f-freq').value;
   const weekday = parseInt(document.getElementById('f-weekday').value, 10);
+  const slot = document.getElementById('f-slot').value;
   const note = document.getElementById('f-note').value.trim();
   const tag = document.getElementById('f-tag').value.trim();
-  const freq = freqType==='weekly' ? {type:'weekly', weekday} : {type: freqType};
+  const freq = freqType==='weekly' ? {type:'weekly', weekday, slot} : {type: freqType};
 
   const verb = modalMode==='add' ? 'add' : 'save changes to';
   askConfirm(
@@ -827,7 +912,7 @@ let wkCurrentWeekday = null;
 
 function openSettingsModal(){
   const cfg = getGhConfig() || {};
-  document.getElementById('gh-workerurl').value = cfg.workerUrl || '';
+  document.getElementById('gh-workerurl').value = cfg.workerUrl || DEFAULT_WORKER_URL;
   document.getElementById('gh-pin').value = cfg.pin || '';
 
   ['morning','evening','workout_pre','workout_post'].forEach(k=>{
@@ -835,8 +920,8 @@ function openSettingsModal(){
     if(el) el.value = SCHEDULE[k] || DEFAULT_SCHEDULE[k];
   });
 
-  // Weekly item picker: one entry per weekly-scheduled supplement, day auto-derived from it.
-  wkTempSchedule = {...(SCHEDULE.weekly || DEFAULT_SCHEDULE.weekly)};
+  // Weekly item picker: one entry per weekly-scheduled supplement, day + slot auto-derived from it.
+  wkTempSchedule = JSON.parse(JSON.stringify(SCHEDULE.weekly || DEFAULT_SCHEDULE.weekly));
   wkCurrentWeekday = null;
   const sel = document.getElementById('wk-med-select');
   sel.innerHTML = '';
@@ -844,12 +929,12 @@ function openSettingsModal(){
   if(weeklyItems.length===0){
     sel.innerHTML = '<option value="">No weekly items yet — add one in Manage Cabinet</option>';
     document.getElementById('wk-day-display').value = '';
-    document.getElementById('wk-time').value = '';
+    SLOTS.forEach(sl=>{ document.getElementById('wk-time-'+sl).value = ''; });
   } else {
     weeklyItems.forEach(it=>{
       const opt = document.createElement('option');
       opt.value = it.id;
-      opt.textContent = `${it.name} — ${DAY_NAMES[it.freq.weekday]}`;
+      opt.textContent = `${it.name} — ${DAY_NAMES[it.freq.weekday]} (${SLOT_LABELS[it.freq.slot||'morning']})`;
       sel.appendChild(opt);
     });
     loadWeeklyPickerFor(weeklyItems[0]);
@@ -857,25 +942,39 @@ function openSettingsModal(){
 
   document.getElementById('settingsOverlay').classList.add('show');
 }
+function currentWeekdaySlotTimes(){
+  return wkTempSchedule[wkCurrentWeekday] || SCHEDULE.weekly && SCHEDULE.weekly[wkCurrentWeekday] || DEFAULT_SLOT_TIMES;
+}
 function loadWeeklyPickerFor(item){
   wkCurrentWeekday = String(item.freq.weekday);
+  const slot = item.freq.slot || 'morning';
   document.getElementById('wk-day-display').value = DAY_NAMES[item.freq.weekday];
-  document.getElementById('wk-time').value = wkTempSchedule[wkCurrentWeekday] || DEFAULT_SCHEDULE.weekly['0'];
+  document.getElementById('wk-slot-display').textContent = SLOT_LABELS[slot];
+  const times = currentWeekdaySlotTimes();
+  SLOTS.forEach(sl=>{
+    document.getElementById('wk-time-'+sl).value = times[sl] || DEFAULT_SLOT_TIMES[sl];
+  });
   const sharing = ITEMS.filter(i=>i.freq.type==='weekly' && String(i.freq.weekday)===wkCurrentWeekday && i.id!==item.id);
   document.getElementById('wk-shared-note').textContent = sharing.length
-    ? `Shared with: ${sharing.map(i=>i.name).join(', ')} (same day, same time)`
+    ? `Also on this weekday: ${sharing.map(i=>`${i.name} (${SLOT_LABELS[i.freq.slot||'morning']})`).join(', ')}`
     : 'No other items on this weekday yet.';
+}
+function stashCurrentWeekdayTimes(){
+  if(wkCurrentWeekday === null) return;
+  wkTempSchedule[wkCurrentWeekday] = {
+    morning: document.getElementById('wk-time-morning').value,
+    afternoon: document.getElementById('wk-time-afternoon').value,
+    night: document.getElementById('wk-time-night').value,
+  };
 }
 document.getElementById('wk-med-select').addEventListener('change', (e)=>{
   // stash whatever was showing for the previous weekday before switching
-  if(wkCurrentWeekday !== null){
-    wkTempSchedule[wkCurrentWeekday] = document.getElementById('wk-time').value;
-  }
+  stashCurrentWeekdayTimes();
   const it = ITEMS.find(i=>i.id===e.target.value);
   if(it) loadWeeklyPickerFor(it);
 });
-document.getElementById('wk-time').addEventListener('change', (e)=>{
-  if(wkCurrentWeekday !== null) wkTempSchedule[wkCurrentWeekday] = e.target.value;
+SLOTS.forEach(sl=>{
+  document.getElementById('wk-time-'+sl).addEventListener('change', stashCurrentWeekdayTimes);
 });
 
 function closeSettingsModal(){ document.getElementById('settingsOverlay').classList.remove('show'); }
@@ -902,9 +1001,7 @@ document.getElementById('sch-save').addEventListener('click', ()=>{
     next[k] = document.getElementById('sch-'+k).value || DEFAULT_SCHEDULE[k];
   });
   // flush whatever weekday is currently showing before merging
-  if(wkCurrentWeekday !== null){
-    wkTempSchedule[wkCurrentWeekday] = document.getElementById('wk-time').value;
-  }
+  stashCurrentWeekdayTimes();
   next.weekly = {...(SCHEDULE.weekly||{}), ...wkTempSchedule};
 
   askConfirm(
@@ -931,9 +1028,26 @@ document.body.addEventListener('click', (e)=>{
   // workout switch
   const sw = e.target.closest('#workoutSwitch');
   if(sw){
+    if(sw.classList.contains('locked')) { showToast('Unlock this past day first to change it'); return; }
     const key = dateKey(viewingDate);
     setWorkoutDay(key, !isWorkoutDay(key));
     renderAll();
+    return;
+  }
+
+  // past-day edit lock toggle
+  if(e.target.closest('#pastEditToggle')){
+    if(pastEditUnlocked){
+      pastEditUnlocked = false;
+      renderAll();
+    } else {
+      askConfirm(
+        'Edit this past day?',
+        `You're about to unlock ${fmtDate(viewingDate)} for editing so it doesn't get changed by accident. Any check-offs or workout-day changes you make will be saved for that day. Cabinet (supplement list) changes never touch past days regardless.`,
+        'Unlock day',
+        ()=>{ pastEditUnlocked = true; renderAll(); }
+      );
+    }
     return;
   }
 
@@ -945,6 +1059,7 @@ document.body.addEventListener('click', (e)=>{
   const pocket = e.target.closest('.pocket');
   if(pocket){
     viewingDate = new Date(pocket.dataset.date + 'T00:00:00');
+    pastEditUnlocked = false; // re-lock whenever the viewed day changes
     renderAll();
     return;
   }
@@ -953,6 +1068,7 @@ document.body.addEventListener('click', (e)=>{
   if(e.target.closest('#jumpToday')){
     viewingDate = new Date();
     weekStart = mondayOf(viewingDate);
+    pastEditUnlocked = false;
     renderAll();
     return;
   }
