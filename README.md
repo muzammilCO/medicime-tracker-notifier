@@ -1,161 +1,180 @@
 # The Stack — Daily Supplement Tracker
 
-A single-file, no-build tracker for your daily/weekly/workout-day supplement stack.
-Runs entirely in the browser — no server, no database, no dependencies.
+A tracker for your daily/weekly/workout-day supplement stack, with history,
+an editable cabinet, and phone push notifications that stay in sync across
+every device you use it from.
 
-## Deploy on GitHub Pages (2 minutes)
+## Repo structure
 
-1. Create a new GitHub repository (e.g. `supplement-tracker`).
-2. Upload `index.html` to the repo root (drag-and-drop on github.com works fine, or:
-   ```
-   git init
-   git add index.html
-   git commit -m "Add supplement tracker"
-   git branch -M main
-   git remote add origin https://github.com/<your-username>/supplement-tracker.git
-   git push -u origin main
-   ```
-3. In the repo, go to **Settings → Pages**.
-4. Under **Build and deployment → Source**, choose **Deploy from a branch**.
-5. Set branch to `main` and folder to `/ (root)`, then **Save**.
-6. GitHub gives you a live URL within a minute or two, usually:
-   `https://<your-username>.github.io/supplement-tracker/`
+```
+supplement-tracker/
+├── index.html                       ← the app itself
+├── README.md
+├── data/
+│   ├── items.json                   ← your supplement list (source of truth)
+│   ├── schedule.json                ← notification times, in IST
+│   └── logs.json                    ← check-off / workout-day history
+├── .github/
+│   └── workflows/
+│       └── reminders.yml            ← sends phone notifications, every 5 min
+└── cloudflare-worker/
+    └── worker.js                    ← sync proxy — keeps your GitHub token
+                                        off the browser (see setup below)
+```
 
-Open that URL on your phone, then use your browser's **"Add to Home Screen"**
-option so it opens like an app.
-
-## New: browsing history/future + editing your cabinet
-
-- **Week strip navigation** — use the ‹ › arrows to move between weeks, then tap any
-  day (past, today, or future) to view that day's checklist below. Past days can
-  still be checked/corrected; future days show what's scheduled but can't be
-  checked off yet.
-- **Manage cabinet** — tap the button top-right to switch into edit mode. From
-  there you can add, edit, delete, and reorder (↑ / ↓) any supplement in any
-  section. Every add, edit, or delete asks **"Are you sure?"** before it saves —
-  nothing changes until you confirm.
-
-## Notifications are now fully dynamic — one file drives everything
-
-`data/items.json` and `data/schedule.json` in this repo are the **single source
-of truth**, read by both the web app and the GitHub Action:
-
-- **`data/items.json`** — your supplement list: name, dose, section, and
-  schedule type (daily / workout-day / specific weekday). Editing it changes
-  both what the app shows *and* what your phone notifications say — no need to
-  touch any workflow file.
-- **`data/schedule.json`** — what time each notification fires, written in
-  **IST**, e.g. `"morning": "07:30"`. No UTC conversion needed.
-
-You can edit either file two ways:
-1. **Through the app** — Manage Cabinet for items, or the ⚙ Sync settings
-   panel for notification times. This requires a one-time GitHub connection
-   (below) so the app can commit the change back to your repo.
-2. **Directly on GitHub** — open `data/items.json` or `data/schedule.json` in
-   the repo, click the pencil icon, edit, commit. Works with no setup at all.
-
-If you edit through the app without connecting GitHub, changes still save in
-that browser, but won't reach your notifications until you also edit the file
-on GitHub directly.
-
-### Connecting the app to GitHub (optional, enables in-app syncing)
-
-1. In GitHub: **Settings → Developer settings → Fine-grained tokens → Generate new token**.
-2. Scope it to **only this repository**, with **Contents: Read and write** permission — nothing else.
-3. In the app, tap **⚙ Sync settings**, fill in your GitHub username, repo name, and paste the token.
-4. From then on, cabinet edits and schedule changes made in the app commit straight to your repo.
-
-The token is stored only in that browser's local storage and is sent only to
-`api.github.com` — never anywhere else. Re-enter it if you clear your browser
-data or switch devices.
-
-## How the reminder workflow works
-
-- Every checkbox tap is saved to your browser's `localStorage`, keyed by date —
-  so each day's checklist naturally resets.
-- The week strip at the top fills in per day as you complete everything scheduled
-  for that day.
-- Toggling **Workout day** reveals the pre-workout (L-Arginine) section for that day.
-- Vitamin D3 (60,000 IU) and Vitamin C are pinned to Sunday and Wednesday respectively —
-  edit the `freq: {weekday: N}` values near the top of the `<script>` block in
-  `index.html` if you want to change those days (0 = Sunday ... 6 = Saturday).
-- Once your 8–10 week D3 correction phase ends, delete or comment out the `d3high`
-  item in the `ITEMS` array and rely on `maglycid3` (daily maintenance) instead.
-
-## Notes
-
-- Checklist and workout-day data live only in the browser (localStorage) —
-  they don't sync across devices. The supplement list and notification times
-  DO sync across devices/browsers if you've connected GitHub, since they live
-  in the repo.
-- This is a personal tracking tool, not medical software. Recheck the stack itself
-  with a doctor periodically, especially around the Vitamin D3 phase change.
+`index.html` and `data/*.json` get deployed together via **GitHub Pages**.
+`cloudflare-worker/worker.js` gets deployed separately on **Cloudflare
+Workers** (free) — it's what lets the app sync without you pasting a long
+GitHub token into every device.
 
 ---
 
-## Push notifications to your phone (via GitHub Actions + ntfy.sh)
+## Part 1 — Deploy the site (GitHub Pages)
 
-A static site can't send notifications on its own — nothing runs when the page
-is closed. This repo solves that with two free pieces:
+1. Create a GitHub repo, e.g. `supplement-tracker`.
+2. Push everything **except** the `cloudflare-worker/` folder to it, keeping
+   the folder structure above:
+   ```bash
+   cd supplement-tracker
+   git init
+   git add index.html README.md data/ .github/
+   git commit -m "Supplement tracker"
+   git branch -M main
+   git remote add origin https://github.com/<you>/supplement-tracker.git
+   git push -u origin main
+   ```
+3. In the repo: **Settings → Pages → Build and deployment → Source →
+   Deploy from a branch** → branch `main`, folder `/ (root)` → **Save**.
+4. GitHub gives you a live URL in a minute or two:
+   `https://<you>.github.io/supplement-tracker/`
 
-- **GitHub Actions**: runs `.github/workflows/reminders.yml` every 5 minutes
-  in GitHub's cloud, even while your phone is off. It checks `data/schedule.json`
-  against the current time in IST, and sends whatever's due using the current
-  contents of `data/items.json`. Free for this use.
-- **ntfy.sh**: a free, no-signup push notification service. You pick a "topic"
-  name (like a private channel), subscribe to it on your phone, and anything
-  posted to that topic pops up as a notification.
+Open it on your phone and use **"Add to Home Screen"** so it behaves like an app.
 
-### 1. Install the ntfy app
-- Android: [ntfy on Google Play](https://play.google.com/store/apps/details?id=io.heckel.ntfy)
-- iOS: [ntfy on the App Store](https://apps.apple.com/us/app/ntfy/id1625396347)
+---
 
-### 2. Pick a private topic name
-Anyone who knows your topic name can send to it or read it — ntfy.sh is public,
-there's no login. So pick something long and random, not `muzz-supplements`.
-Example: `muzz-stack-7f3ka9x2`
+## Part 2 — Phone push notifications (GitHub Actions + ntfy.sh)
 
-In the app: tap **+ Subscribe to topic**, enter that exact string.
+`.github/workflows/reminders.yml` runs every 5 minutes in GitHub's cloud and
+checks `data/schedule.json` against the current time **in IST** — no UTC
+math anywhere. It builds each notification's text live from `data/items.json`,
+so editing your supplement list automatically changes what the notification
+says, with nothing to redeploy.
 
-### 3. Add the topic as a GitHub Secret (keeps it out of your public code)
-In your repo: **Settings → Secrets and variables → Actions → New repository secret**
-- Name: `NTFY_TOPIC`
-- Value: `muzz-stack-7f3ka9x2` (your topic string, no `ntfy.sh/` prefix)
+1. Install the **ntfy** app: [Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy) · [iOS](https://apps.apple.com/us/app/ntfy/id1625396347)
+2. Pick a long, random **topic name** nobody would guess — ntfy.sh has no
+   login, so anyone who knows the topic can read or post to it. Example:
+   `muzz-stack-7f3ka9x2`. Subscribe to it in the app.
+3. In your repo: **Settings → Secrets and variables → Actions → New repository
+   secret** → name `NTFY_TOPIC`, value your topic string.
+4. Test it: **Actions tab → "Reminders (dynamic, IST)" → Run workflow** → tick
+   **force** → confirm. You should get every notification once, immediately,
+   regardless of the actual time — this proves the pipeline works before you
+   trust the schedule.
 
-### 4. Push everything to your repo
-`index.html`, `data/items.json`, `data/schedule.json`, and
-`.github/workflows/reminders.yml` all need to be pushed together — the app and
-the workflow both read the `data/` files.
+### What's scheduled, and how to change it
 
-### 5. Test it immediately (don't wait for the schedule)
-Go to your repo's **Actions** tab → **Reminders (dynamic, IST)** → **Run workflow**
-→ tick **force** → confirm. This sends every notification once regardless of
-the current time, so you can verify the whole pipeline works before trusting
-the schedule.
+All of this can be edited **live**, either through the app's ⚙ **Sync
+settings** panel (see Part 3) or by editing the JSON files directly on
+GitHub — no workflow file editing, ever.
 
-### What's scheduled (edit times anytime — in the app's ⚙ Sync settings, or
-directly in `data/schedule.json`; all times are IST)
-
-| `schedule.json` key | Default | Sends |
+| `schedule.json` key | Default | Fires |
 |---|---|---|
-| `morning` | 07:30 daily | Everything in the Morning section marked "daily" |
-| `evening` | 20:30 daily | Everything in the Evening section marked "daily" |
-| `weekly_sun` | 08:00 Sundays | Everything scheduled for Sunday |
-| `weekly_wed` | 08:00 Wednesdays | Everything scheduled for Wednesday |
-| `workout_pre` | 18:00 daily | Everything in the Pre-workout section |
-| `workout_post` | 19:15 daily | Everything in the Post-workout section |
+| `morning` | 07:30 daily | Everything in Morning marked "daily" |
+| `evening` | 20:30 daily | Everything in Evening marked "daily" |
+| `workout_pre` | 18:00 daily | Everything in Pre-workout |
+| `workout_post` | 19:15 daily | Everything in Post-workout |
+| `weekly.<0-6>` | `weekly.0` = 08:00, `weekly.3` = 08:00 | Everything scheduled for that weekday (0 = Sunday ... 6 = Saturday) |
 
-The pre/post-workout times fire every day by default since your gym day
-varies — just ignore the notification on rest days, or change the times to
-match your routine.
+**Changing a time takes effect on the very next 5-minute check** — if you move
+the pre-workout notification from 11:00 to 17:00, you'll simply stop getting
+it at 11:00 and start getting it at 17:00, because the workflow re-reads
+`schedule.json` fresh every single run. Nothing needs redeploying.
+
+The pre/post-workout notifications fire daily by default since your gym day
+varies — ignore them on rest days, or change the times to match your routine.
+
+**Weekly items** — in the app's Sync settings, the "Weekly item" picker lists
+every supplement you've scheduled weekly, auto-shows which day it's on (taken
+from that item's own schedule in Manage Cabinet), and lets you set what time
+that day's notification fires. Multiple items on the same weekday share one
+notification and one time.
 
 ### Limitations to know about
-- GitHub free-tier scheduled workflows can be delayed a few minutes during
-  high-load periods — treat times as "around" rather than to-the-second. Set
-  schedule times in 5-minute increments (the workflow checks every 5 minutes).
-- Scheduled workflows pause automatically if the repo has zero activity for
-  60 days. Push any small commit, or run the workflow manually once, to
-  reactivate it if that happens.
-- Once your D3 60,000 IU correction phase ends, delete the `d3high` entry from
-  `data/items.json` (via the app's Manage Cabinet, or directly on GitHub) so
-  the Sunday reminder stops mentioning it.
+- GitHub's free scheduled workflows can run a few minutes late during
+  high load — treat times as "around," not to-the-second. Pick times in
+  5-minute steps (the check itself runs every 5 minutes).
+- Scheduled workflows pause after 60 days of zero repo activity. Push any
+  small commit, or run the workflow manually once, to wake it back up.
+- Once your D3 60,000 IU correction phase ends, delete the `d3high` entry
+  from `data/items.json` (Manage Cabinet, or directly on GitHub) so the
+  weekly reminder stops mentioning it.
+
+---
+
+## Part 3 — Cross-device sync, without pasting a long token everywhere
+
+### The short version
+A GitHub **Secret** can only ever be read by GitHub Actions — never by a
+public webpage, by design. So there's no way for the browser itself to "use
+a Secret." What actually solves your problem — a long token you don't want
+to keep re-entering — is moving that token off the browser entirely.
+
+**The fix:** a tiny free proxy (Cloudflare Worker) holds your real GitHub
+token as a server-side secret. Your browser only ever needs the Worker's URL
+and a short PIN you make up — something you can type in a few seconds, and
+only once per device, not once per session.
+
+| | Where it lives | How long it is |
+|---|---|---|
+| GitHub token (real credential) | Cloudflare Worker secret, server-side only | Long, entered once, ever |
+| Sync PIN (what your browser uses) | This browser's local storage | Short, your choice, e.g. `482913` |
+
+### Setting up the Worker (one-time, ~5 minutes)
+
+1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) → sign up free if
+   you don't have an account.
+2. **Workers & Pages → Create → Create Worker.** Give it any name, e.g.
+   `supplement-sync`. Deploy the default template first.
+3. Click **Edit code** (Quick Edit). Delete the placeholder code and paste in
+   the contents of `cloudflare-worker/worker.js` from this repo. Click **Save
+   and deploy**.
+4. Back on the Worker's page, go to **Settings → Variables and Secrets → Add**.
+   Add these five, each marked as a **Secret** (encrypted):
+   - `GITHUB_TOKEN` — a GitHub fine-grained PAT. Create one at GitHub →
+     Settings → Developer settings → Fine-grained tokens → scope it to
+     **only this repository**, permission **Contents: Read and write**.
+     This is the one place the long token gets pasted — ever.
+   - `GITHUB_OWNER` — your GitHub username, e.g. `muzz123`
+   - `GITHUB_REPO` — the repo name, e.g. `supplement-tracker`
+   - `GITHUB_BRANCH` — usually `main`
+   - `SYNC_PIN` — make up a short string, e.g. `482913`. This is what you'll
+     type into the app on each device.
+5. Save. Your Worker now has a public URL like
+   `https://supplement-sync.<your-cloudflare-name>.workers.dev` — copy it.
+
+### Connecting each device to the Worker
+
+1. Open the app, tap **⚙ Sync settings**.
+2. Paste the **Worker URL** and your **Sync PIN**.
+3. Do this once per device (phone, laptop, etc.) — after that, cabinet edits,
+   schedule changes, and daily check-offs on that device all sync through the
+   Worker to your repo, and any other connected device picks up the same data.
+
+Nothing sensitive sits in the browser beyond a short PIN you chose yourself —
+losing or exposing it only lets someone commit to this one repo's `data/`
+files, and only if they also have your Worker URL. The Worker also refuses
+to write anywhere outside `data/*.json`, even with a valid PIN.
+
+---
+
+## Notes
+
+- **What syncs:** supplements, notification times, and check-off/workout-day
+  history — as long as a device has the Worker URL + PIN configured.
+  Without that, a device only saves locally to its own browser.
+- Check-off history syncs a couple of seconds after your last tap (not on
+  every single tap), and merges day-by-day if two devices log around the
+  same time, rather than one overwriting the other.
+- This is a personal tracking tool, not medical software. Recheck the stack
+  itself with a doctor periodically, especially around the Vitamin D3 phase
+  change.

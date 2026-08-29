@@ -291,53 +291,55 @@
   </div>
 </div>
 
-<!-- GitHub sync settings modal -->
+<!-- Sync settings modal -->
 <div class="overlay" id="settingsOverlay">
   <div class="modal">
     <h3>Sync settings</h3>
     <p class="item-note" style="margin: -6px 0 14px;">
-      Connect this app to your GitHub repo so cabinet edits also update
-      <code>data/items.json</code> — the same file your GitHub Actions read to
-      build phone notifications. Without this, edits only save in this browser.
+      Connect this app to your GitHub repo so cabinet edits, history, and
+      notification times all sync across every device. Uses a small proxy
+      (see README) so you never paste a long GitHub token here — just a short
+      PIN.
     </p>
-    <div class="field-row">
-      <div class="field"><label>GitHub username</label><input type="text" id="gh-owner" placeholder="e.g. muzz123"></div>
-      <div class="field"><label>Repository name</label><input type="text" id="gh-repo" placeholder="e.g. supplement-tracker"></div>
-    </div>
-    <div class="field"><label>Branch</label><input type="text" id="gh-branch" placeholder="main"></div>
-    <div class="field">
-      <label>Personal access token</label>
-      <input type="text" id="gh-token" placeholder="github_pat_...">
-    </div>
+    <div class="field"><label>Worker URL</label><input type="text" id="gh-workerurl" placeholder="https://your-worker.your-name.workers.dev"></div>
+    <div class="field"><label>Sync PIN</label><input type="text" id="gh-pin" placeholder="e.g. 4 to 8 characters, set when you deployed the worker"></div>
     <p class="item-note">
-      Use a <b>fine-grained token</b> scoped to only this one repo, with
-      <b>Contents: Read and write</b> permission — nothing broader. It's stored
-      only in this browser's local storage and sent only to api.github.com.
-      Create one at github.com → Settings → Developer settings → Fine-grained tokens.
+      The PIN is stored only in this browser's local storage and sent only to
+      your Worker URL. The real GitHub token never leaves the Worker. Set up
+      once per device — see the README's "Sync without pasting a long token"
+      section.
     </p>
     <div class="modal-actions">
-      <button class="btn btn-danger" id="gh-clear">Clear token</button>
+      <button class="btn btn-danger" id="gh-clear">Clear PIN</button>
       <button class="btn btn-secondary" id="gh-cancel">Cancel</button>
       <button class="btn btn-primary" id="gh-save">Save</button>
     </div>
 
     <h3 style="margin-top: 22px;">Notification times (IST)</h3>
     <p class="item-note" style="margin: -6px 0 14px;">
-      When your phone reminders fire — set directly in your local time, no UTC
-      conversion needed. Pick times in 5-minute steps.
+      Times are re-read live every 5 minutes — change one here and the next
+      matching time is when you'll get notified, nothing needs re-deploying.
     </p>
     <div class="field-row">
       <div class="field"><label>Morning stack</label><input type="time" id="sch-morning" step="300"></div>
       <div class="field"><label>Evening stack</label><input type="time" id="sch-evening" step="300"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Weekly · Sunday</label><input type="time" id="sch-weekly_sun" step="300"></div>
-      <div class="field"><label>Weekly · Wednesday</label><input type="time" id="sch-weekly_wed" step="300"></div>
-    </div>
-    <div class="field-row">
       <div class="field"><label>Pre-workout</label><input type="time" id="sch-workout_pre" step="300"></div>
       <div class="field"><label>Post-workout</label><input type="time" id="sch-workout_post" step="300"></div>
     </div>
+
+    <div style="border-top:1px solid var(--line); margin: 16px 0 14px;"></div>
+    <label style="display:block; font-size: 12px; color: var(--ink-soft); margin-bottom: 4px;
+      font-family:'IBM Plex Mono', monospace; text-transform:uppercase; letter-spacing:.04em;">Weekly item</label>
+    <select id="wk-med-select" style="width:100%; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line);
+      background: var(--bg); font-family:'Inter', sans-serif; font-size: 14px; color: var(--ink); margin-bottom: 10px;"></select>
+    <div class="field-row">
+      <div class="field"><label>Day (from this item's schedule)</label><input type="text" id="wk-day-display" disabled></div>
+      <div class="field"><label>Notify at</label><input type="time" id="wk-time" step="300"></div>
+    </div>
+    <p class="item-note" id="wk-shared-note">Other items on the same weekday share this time.</p>
+
     <div class="modal-actions">
       <button class="btn btn-secondary" id="sch-cancel">Close</button>
       <button class="btn btn-primary" id="sch-save">Save times</button>
@@ -382,8 +384,8 @@ const DEFAULT_ITEMS = [
 
 const DEFAULT_SCHEDULE = {
   morning: '07:30', evening: '20:30',
-  weekly_sun: '08:00', weekly_wed: '08:00',
-  workout_pre: '18:00', workout_post: '19:15'
+  workout_pre: '18:00', workout_post: '19:15',
+  weekly: { '0': '08:00', '3': '08:00' } // weekday number -> IST time
 };
 
 // ---- Item storage: data/items.json in the repo is the source of truth,
@@ -423,29 +425,22 @@ async function initSchedule(){
 }
 function saveItemsLocal(items){ localStorage.setItem('stack:items-cache', JSON.stringify(items)); }
 
-// ---- GitHub sync config (stored locally only; token never leaves the
-// browser except in direct calls to api.github.com) ----
+// ---- Sync config: a Worker URL + short PIN, stored locally. The real
+// GitHub token lives only on the Worker (Cloudflare secret), never here. ----
 function getGhConfig(){ try{ return JSON.parse(localStorage.getItem('stack:ghconfig')||'null'); }catch(e){ return null; } }
 function saveGhConfig(cfg){ localStorage.setItem('stack:ghconfig', JSON.stringify(cfg)); }
 
 async function syncJsonToGithub(path, data){
   const cfg = getGhConfig();
-  if(!cfg || !cfg.token || !cfg.owner || !cfg.repo) return {ok:false, reason:'not-configured'};
-  const branch = cfg.branch || 'main';
-  const apiUrl = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`;
+  if(!cfg || !cfg.workerUrl || !cfg.pin) return {ok:false, reason:'not-configured'};
   try{
-    let sha;
-    const getRes = await fetch(`${apiUrl}?ref=${branch}`, {
-      headers:{ Authorization:`token ${cfg.token}`, Accept:'application/vnd.github+json' }
+    const res = await fetch(cfg.workerUrl, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ path, content: JSON.stringify(data, null, 2), pin: cfg.pin })
     });
-    if(getRes.ok){ sha = (await getRes.json()).sha; }
-    const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
-    const putRes = await fetch(apiUrl, {
-      method:'PUT',
-      headers:{ Authorization:`token ${cfg.token}`, Accept:'application/vnd.github+json', 'Content-Type':'application/json' },
-      body: JSON.stringify({ message:`Update ${path}`, content, sha, branch })
-    });
-    if(!putRes.ok){ const j = await putRes.json().catch(()=>({})); return {ok:false, reason: j.message || putRes.statusText}; }
+    const j = await res.json().catch(()=>({}));
+    if(!res.ok || !j.ok) return {ok:false, reason: j.error || res.statusText};
     return {ok:true};
   }catch(e){ return {ok:false, reason: e.message}; }
 }
@@ -453,20 +448,20 @@ async function syncJsonToGithub(path, data){
 async function syncItemsToGithub(items){ return syncJsonToGithub('data/items.json', items); }
 
 // Save locally immediately (so the UI never waits on the network), then
-// attempt to push to GitHub if a token is configured, and report the result.
+// attempt to push to GitHub (via the Worker) if configured, and report the result.
 async function commitItems(items){
   saveItemsLocal(items);
   const res = await syncJsonToGithub('data/items.json', items);
   if(res.ok) showToast('✓ Saved and synced to GitHub');
-  else if(res.reason==='not-configured') showToast('Saved locally — add a GitHub token in Settings to sync notifications');
-  else showToast('Saved locally — GitHub sync failed: ' + res.reason, true);
+  else if(res.reason==='not-configured') showToast('Saved locally — add Worker URL + PIN in Settings to sync');
+  else showToast('Saved locally — sync failed: ' + res.reason, true);
 }
 async function commitSchedule(schedule){
   localStorage.setItem('stack:schedule-cache', JSON.stringify(schedule));
   const res = await syncJsonToGithub('data/schedule.json', schedule);
   if(res.ok) showToast('✓ Notification times saved and synced');
-  else if(res.reason==='not-configured') showToast('Saved locally — add a GitHub token in Settings to sync notification times');
-  else showToast('Saved locally — GitHub sync failed: ' + res.reason, true);
+  else if(res.reason==='not-configured') showToast('Saved locally — add Worker URL + PIN in Settings to sync');
+  else showToast('Saved locally — sync failed: ' + res.reason, true);
 }
 
 // ---- Toast ----
@@ -498,12 +493,77 @@ function dateKey(d){
   const day = String(d.getDate()).padStart(2,'0');
   return `${y}-${m}-${day}`;
 }
-function loadDay(key){ try{ return JSON.parse(localStorage.getItem('stack:'+key)) || {}; }catch(e){ return {}; } }
-function saveDay(key, data){ localStorage.setItem('stack:'+key, JSON.stringify(data)); }
+// ---- Daily logs (check-offs + workout-day flag): synced to data/logs.json
+// so history is shared across devices, not just one browser.
+// Writes are debounced and merged so quick taps don't spam commits and
+// two devices editing near-simultaneously don't clobber each other. ----
+let LOGS = {}; // { "2026-08-25": { multivit: true, __workout: false, ... }, ... }
+let logsCommitTimer = null;
+
+async function initLogs(){
+  try{
+    const res = await fetch('data/logs.json', {cache:'no-store'});
+    if(res.ok){
+      LOGS = await res.json();
+      localStorage.setItem('stack:logs-cache', JSON.stringify(LOGS));
+      return;
+    }
+  }catch(e){}
+  try{
+    const cached = localStorage.getItem('stack:logs-cache');
+    if(cached){ LOGS = JSON.parse(cached); return; }
+  }catch(e){}
+  // One-time migration from the older per-date localStorage keys, if present.
+  LOGS = {};
+  for(let i=0; i<localStorage.length; i++){
+    const k = localStorage.key(i);
+    const m = k && k.match(/^stack:(\d{4}-\d{2}-\d{2})$/);
+    if(m){ try{ LOGS[m[1]] = JSON.parse(localStorage.getItem(k)); }catch(e){} }
+  }
+  localStorage.setItem('stack:logs-cache', JSON.stringify(LOGS));
+}
+
+function loadDay(key){ return LOGS[key] || {}; }
+function saveDay(key, data){
+  LOGS[key] = data;
+  localStorage.setItem('stack:logs-cache', JSON.stringify(LOGS));
+  scheduleLogsCommit();
+}
 function isWorkoutDay(key){ return loadDay(key).__workout === true; }
 function setWorkoutDay(key, val){ const d = loadDay(key); d.__workout = val; saveDay(key, d); }
 function isChecked(key, id){ return !!loadDay(key)[id]; }
 function setChecked(key, id, val){ const d = loadDay(key); d[id] = val; saveDay(key, d); }
+
+function scheduleLogsCommit(){
+  clearTimeout(logsCommitTimer);
+  logsCommitTimer = setTimeout(commitLogsToGithub, 2500); // batch quick taps into one commit
+}
+
+async function commitLogsToGithub(){
+  const cfg = getGhConfig();
+  if(!cfg || !cfg.workerUrl || !cfg.pin) return; // local-only, silently
+  try{
+    // Re-fetch the latest committed version first (public, no auth needed)
+    // so a same-day edit from another device isn't overwritten.
+    let remote = {};
+    try{
+      const res = await fetch('data/logs.json', {cache:'no-store'});
+      if(res.ok) remote = await res.json();
+    }catch(e){}
+
+    // Merge day-by-day, local values winning where both have the same day —
+    // this is what lets a second device's changes survive alongside the
+    // first device's, instead of one overwriting the other wholesale.
+    const merged = {...remote};
+    Object.keys(LOGS).forEach(day=>{ merged[day] = {...(remote[day]||{}), ...LOGS[day]}; });
+    LOGS = merged;
+    localStorage.setItem('stack:logs-cache', JSON.stringify(LOGS));
+
+    const result = await syncJsonToGithub('data/logs.json', merged);
+    if(result.ok) showToast('✓ History synced');
+    else showToast('History sync failed: ' + result.reason, true);
+  }catch(e){ showToast('History sync failed: ' + e.message, true); }
+}
 
 // ---- App state ----
 let ITEMS = [];
@@ -762,53 +822,91 @@ document.getElementById('itemDeleteBtn').addEventListener('click', ()=>{
 });
 
 // ---- Settings modal ----
+let wkTempSchedule = {};   // weekday(string) -> time, edited within this modal session
+let wkCurrentWeekday = null;
+
 function openSettingsModal(){
   const cfg = getGhConfig() || {};
-  let guessOwner = cfg.owner || '';
-  let guessRepo = cfg.repo || '';
-  if(!guessOwner && location.hostname.endsWith('.github.io')){
-    guessOwner = location.hostname.split('.')[0];
-  }
-  if(!guessRepo && location.pathname.split('/').filter(Boolean)[0]){
-    guessRepo = location.pathname.split('/').filter(Boolean)[0];
-  }
-  document.getElementById('gh-owner').value = guessOwner;
-  document.getElementById('gh-repo').value = guessRepo;
-  document.getElementById('gh-branch').value = cfg.branch || 'main';
-  document.getElementById('gh-token').value = cfg.token || '';
+  document.getElementById('gh-workerurl').value = cfg.workerUrl || '';
+  document.getElementById('gh-pin').value = cfg.pin || '';
 
-  Object.keys(DEFAULT_SCHEDULE).forEach(k=>{
+  ['morning','evening','workout_pre','workout_post'].forEach(k=>{
     const el = document.getElementById('sch-'+k);
     if(el) el.value = SCHEDULE[k] || DEFAULT_SCHEDULE[k];
   });
 
+  // Weekly item picker: one entry per weekly-scheduled supplement, day auto-derived from it.
+  wkTempSchedule = {...(SCHEDULE.weekly || DEFAULT_SCHEDULE.weekly)};
+  wkCurrentWeekday = null;
+  const sel = document.getElementById('wk-med-select');
+  sel.innerHTML = '';
+  const weeklyItems = ITEMS.filter(it=>it.freq.type==='weekly').sort((a,b)=>a.freq.weekday-b.freq.weekday);
+  if(weeklyItems.length===0){
+    sel.innerHTML = '<option value="">No weekly items yet — add one in Manage Cabinet</option>';
+    document.getElementById('wk-day-display').value = '';
+    document.getElementById('wk-time').value = '';
+  } else {
+    weeklyItems.forEach(it=>{
+      const opt = document.createElement('option');
+      opt.value = it.id;
+      opt.textContent = `${it.name} — ${DAY_NAMES[it.freq.weekday]}`;
+      sel.appendChild(opt);
+    });
+    loadWeeklyPickerFor(weeklyItems[0]);
+  }
+
   document.getElementById('settingsOverlay').classList.add('show');
 }
+function loadWeeklyPickerFor(item){
+  wkCurrentWeekday = String(item.freq.weekday);
+  document.getElementById('wk-day-display').value = DAY_NAMES[item.freq.weekday];
+  document.getElementById('wk-time').value = wkTempSchedule[wkCurrentWeekday] || DEFAULT_SCHEDULE.weekly['0'];
+  const sharing = ITEMS.filter(i=>i.freq.type==='weekly' && String(i.freq.weekday)===wkCurrentWeekday && i.id!==item.id);
+  document.getElementById('wk-shared-note').textContent = sharing.length
+    ? `Shared with: ${sharing.map(i=>i.name).join(', ')} (same day, same time)`
+    : 'No other items on this weekday yet.';
+}
+document.getElementById('wk-med-select').addEventListener('change', (e)=>{
+  // stash whatever was showing for the previous weekday before switching
+  if(wkCurrentWeekday !== null){
+    wkTempSchedule[wkCurrentWeekday] = document.getElementById('wk-time').value;
+  }
+  const it = ITEMS.find(i=>i.id===e.target.value);
+  if(it) loadWeeklyPickerFor(it);
+});
+document.getElementById('wk-time').addEventListener('change', (e)=>{
+  if(wkCurrentWeekday !== null) wkTempSchedule[wkCurrentWeekday] = e.target.value;
+});
+
 function closeSettingsModal(){ document.getElementById('settingsOverlay').classList.remove('show'); }
 
 document.getElementById('gh-cancel').addEventListener('click', closeSettingsModal);
 document.getElementById('sch-cancel').addEventListener('click', closeSettingsModal);
 document.getElementById('gh-save').addEventListener('click', ()=>{
-  const owner = document.getElementById('gh-owner').value.trim();
-  const repo = document.getElementById('gh-repo').value.trim();
-  const branch = document.getElementById('gh-branch').value.trim() || 'main';
-  const token = document.getElementById('gh-token').value.trim();
-  saveGhConfig({owner, repo, branch, token});
-  showToast(owner && repo && token ? '✓ Sync settings saved' : 'Settings saved (incomplete — sync stays off)');
+  const workerUrl = document.getElementById('gh-workerurl').value.trim();
+  const pin = document.getElementById('gh-pin').value.trim();
+  saveGhConfig({workerUrl, pin});
+  showToast(workerUrl && pin ? '✓ Sync settings saved' : 'Settings saved (incomplete — sync stays off)');
 });
 document.getElementById('gh-clear').addEventListener('click', ()=>{
-  askConfirm('Clear saved token?', 'This removes the GitHub token from this browser. Cabinet edits will keep saving locally, but stop syncing to your repo until you add a token again.', 'Clear token', ()=>{
+  askConfirm('Clear saved PIN?', 'This removes the sync PIN from this browser. Edits will keep saving locally, but stop syncing to your repo until you add it again.', 'Clear PIN', ()=>{
     const cfg = getGhConfig() || {};
-    saveGhConfig({...cfg, token:''});
-    document.getElementById('gh-token').value = '';
-    showToast('Token cleared');
+    saveGhConfig({...cfg, pin:''});
+    document.getElementById('gh-pin').value = '';
+    showToast('PIN cleared');
   });
 });
 document.getElementById('sch-save').addEventListener('click', ()=>{
-  const next = {};
-  Object.keys(DEFAULT_SCHEDULE).forEach(k=>{
+  const next = {...SCHEDULE};
+  ['morning','evening','workout_pre','workout_post'].forEach(k=>{
     next[k] = document.getElementById('sch-'+k).value || DEFAULT_SCHEDULE[k];
   });
+  // flush whatever weekday is currently showing before merging
+  if(wkCurrentWeekday !== null){
+    wkTempSchedule[wkCurrentWeekday] = document.getElementById('wk-time').value;
+  }
+  next.weekly = {...(SCHEDULE.weekly||{}), ...wkTempSchedule};
+
   askConfirm(
     'Update notification times?',
     'Are you sure you want to change your reminder times? This updates data/schedule.json and takes effect on the next 5-minute check.',
@@ -906,7 +1004,7 @@ document.body.addEventListener('click', (e)=>{
   }
 });
 
-Promise.all([initItems(), initSchedule()]).then(renderAll);
+Promise.all([initItems(), initSchedule(), initLogs()]).then(renderAll);
 </script>
 </body>
 </html>
