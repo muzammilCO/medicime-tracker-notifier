@@ -641,11 +641,11 @@
     "protein": true,
     "creatine": true,
     "calcium": true,
-    "omega3": true,
+    "omega3": false,
     "maglycid3": true,
     "__workout": true,
     "larginine": true,
-    "d3high": true,
+    "d3high": false,
     "vitc": true,
     "__sent_weekly_6_night": true
   }
