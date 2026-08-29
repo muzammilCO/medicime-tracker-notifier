@@ -2,7 +2,7 @@ name: Schedule Test
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '3,8,13,18,23,28,33,38,43,48,53,58 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -13,4 +13,4 @@ jobs:
         run: |
           echo "UTC: $(date -u)"
           echo "IST: $(TZ='Asia/Kolkata' date)"
-          echo "This workflow was triggered by: ${{ github.event_name }}"
+          echo "Triggered by: ${{ github.event_name }}"
