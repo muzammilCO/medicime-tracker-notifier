@@ -635,7 +635,7 @@
     ]
   },
   "2026-08-29": {
-    "multivit": true,
+    "multivit": false,
     "bcomplex": true,
     "shilajit": true,
     "protein": true,
@@ -644,7 +644,7 @@
     "omega3": false,
     "maglycid3": true,
     "__workout": true,
-    "larginine": true,
+    "larginine": false,
     "d3high": false,
     "vitc": true,
     "__sent_weekly_6_night": true
