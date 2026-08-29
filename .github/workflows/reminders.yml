@@ -4,34 +4,49 @@ name: Reminders (dynamic, IST)
 # REMINDER SYSTEM
 # ============================================================
 #
-# Cloudflare Worker triggers this workflow every 5 minutes
-# using GitHub workflow_dispatch.
+# Cloudflare Worker calls this workflow using workflow_dispatch.
 #
-# Reminder behavior:
+# Cloudflare should trigger this workflow every 5 minutes.
+#
+# Notification behavior:
 #
 #   Scheduled time reached
 #          ↓
-#   Check whether required items are taken
+#   Is notifications globally enabled?
 #          ↓
-#       NOT TAKEN
+#       YES
+#          ↓
+#   Are all relevant items taken?
+#          ↓
+#      NO
 #          ↓
 #   Send notification
 #          ↓
 #   Wait 15 minutes
 #          ↓
-#   Check again
-#          ↓
-#   Repeat until all relevant items are taken
+#   Repeat until taken
 #
-# State separation:
+# Files:
+#
+#   data/items.json
+#       WHAT should be taken
+#
+#   data/schedule.json
+#       WHEN reminders should start
 #
 #   data/logs.json
-#       → medicine/workout TAKEN status
-#       → READ ONLY by this workflow
+#       WHETHER items were taken
+#       READ ONLY by this workflow
 #
 #   data/notification-log.json
-#       → last notification time
-#       → written ONLY by this workflow
+#       WHEN notifications were last sent
+#       WRITTEN ONLY by this workflow
+#
+#   data/notification-settings.json
+#       Global notification ON/OFF
+#
+#   data/workout-settings.json
+#       Default workout days
 #
 # ============================================================
 
@@ -39,12 +54,12 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Send all notifications immediately for testing'
+        description: "Send all notifications immediately for testing"
         type: boolean
         default: false
 
-# Prevent two reminder runs from changing notification-log.json
-# simultaneously.
+# Prevent two executions from modifying notification-log.json
+# at the same time.
 concurrency:
   group: reminder-run
   cancel-in-progress: false
@@ -73,8 +88,8 @@ jobs:
           # CONFIGURATION
           # ==========================================================
 
-          # Cloudflare triggers GitHub every 5 minutes.
-          # Notification itself is limited to once every 15 minutes.
+          # Cloudflare calls GitHub every 5 minutes.
+          # Notifications themselves repeat every 15 minutes.
           REPEAT_MIN=15
 
           IST_TIME=$(TZ='Asia/Kolkata' date +%H:%M)
@@ -85,19 +100,40 @@ jobs:
           echo "Reminder workflow"
           echo "IST now: $IST_DATE $IST_TIME"
           echo "IST weekday: $IST_WEEKDAY"
-          echo "Repeat interval: ${REPEAT_MIN} minutes"
+          echo "Repeat interval: $REPEAT_MIN minutes"
           echo "Force: ${FORCE:-false}"
           echo "=========================================="
 
           CHANGED=false
 
           # ==========================================================
-          # ENSURE NOTIFICATION LOG EXISTS
+          # ENSURE NOTIFICATION LOG EXISTS AND IS VALID JSON
           # ==========================================================
 
           if [ ! -f data/notification-log.json ]; then
             echo "{}" > data/notification-log.json
-            CHANGED=true
+          fi
+
+          if ! jq empty data/notification-log.json >/dev/null 2>&1; then
+            echo "notification-log.json is empty or invalid."
+            echo "Resetting to {}."
+            echo "{}" > data/notification-log.json
+          fi
+
+          # ==========================================================
+          # GLOBAL NOTIFICATION SETTING
+          # ==========================================================
+
+          NOTIFICATIONS_ENABLED=$(jq -r \
+            '.enabled // true' \
+            data/notification-settings.json 2>/dev/null || echo "true")
+
+          echo "Notifications enabled: $NOTIFICATIONS_ENABLED"
+
+          if [ "$NOTIFICATIONS_ENABLED" != "true" ]; then
+            echo "Notifications are globally disabled."
+            echo "No notifications will be sent."
+            exit 0
           fi
 
           # ==========================================================
@@ -107,13 +143,14 @@ jobs:
           to_minutes() {
             local h=${1%%:*}
             local m=${1##*:}
+
             echo $((10#$h * 60 + 10#$m))
           }
 
           CUR_MIN=$(to_minutes "$IST_TIME")
 
           # ==========================================================
-          # DAILY SCHEDULE
+          # GET SCHEDULE TIME
           # ==========================================================
 
           get_schedule_time() {
@@ -126,13 +163,12 @@ jobs:
           }
 
           # ==========================================================
-          # CHECK WHETHER TARGET TIME HAS BEEN REACHED
+          # CHECK WHETHER REMINDER TIME HAS ARRIVED
           #
-          # Once today's target time has passed, the reminder remains
-          # eligible until the relevant items are taken.
+          # Once the scheduled time has passed, the reminder remains
+          # eligible for the rest of the current day until taken.
           #
-          # Because the state is stored under IST_DATE, yesterday's
-          # state cannot suppress today's reminder.
+          # A new IST_DATE automatically starts a fresh reminder day.
           # ==========================================================
 
           reminder_due() {
@@ -152,6 +188,18 @@ jobs:
 
           # ==========================================================
           # NOTIFICATION LOG
+          #
+          # Example:
+          #
+          # {
+          #   "2026-08-29": {
+          #     "morning": 510,
+          #     "evening": 1379,
+          #     "workout_pre": 1090,
+          #     "workout_post": 1150,
+          #     "weekly_6_night": 1335
+          #   }
+          # }
           # ==========================================================
 
           get_last_sent() {
@@ -171,13 +219,13 @@ jobs:
             last_sent=$(get_last_sent "$marker")
 
             if [ "$last_sent" = "-9999" ]; then
-              echo "$marker: never sent today"
+              echo "$marker: no notification sent today"
               return 0
             fi
 
             local elapsed=$((CUR_MIN - last_sent))
 
-            echo "$marker: last notification ${elapsed} minutes ago"
+            echo "$marker: last notification $elapsed minutes ago"
 
             [ "$elapsed" -ge "$REPEAT_MIN" ]
           }
@@ -185,6 +233,11 @@ jobs:
           mark_sent() {
             local marker="$1"
             local tmp
+
+            # Recover automatically if file somehow becomes invalid.
+            if ! jq empty data/notification-log.json >/dev/null 2>&1; then
+              echo "{}" > data/notification-log.json
+            fi
 
             tmp=$(jq \
               --arg d "$IST_DATE" \
@@ -195,7 +248,7 @@ jobs:
               ' \
               data/notification-log.json)
 
-            echo "$tmp" > data/notification-log.json
+            printf '%s\n' "$tmp" > data/notification-log.json
 
             CHANGED=true
 
@@ -205,8 +258,8 @@ jobs:
           # ==========================================================
           # DAILY ITEMS
           #
-          # Reads logs.json ONLY.
-          # Never modifies it.
+          # READS logs.json ONLY.
+          # NEVER modifies logs.json.
           # ==========================================================
 
           all_daily_taken() {
@@ -225,7 +278,7 @@ jobs:
               data/items.json)
 
             if [ -z "$ids" ]; then
-              echo "$section: no daily items"
+              echo "$section: no daily items configured"
               return 0
             fi
 
@@ -249,19 +302,54 @@ jobs:
           }
 
           # ==========================================================
-          # WORKOUT STATUS
+          # WORKOUT DAY
+          #
+          # Priority:
+          #
+          # 1. Explicit __workout value in today's logs.json
+          # 2. Default day from workout-settings.json
+          #
+          # This means you can override an individual day without
+          # changing your normal weekly workout schedule.
           # ==========================================================
 
-          workout_active() {
-            jq -e \
+          is_workout_day() {
+            local explicit
+
+            explicit=$(jq -r \
               --arg d "$IST_DATE" \
-              '.[$d].__workout == true' \
-              data/logs.json \
-              >/dev/null 2>&1
+              'if .[$d] and (.[$d] | has("__workout"))
+               then .[$d].__workout
+               else "unset"
+               end' \
+              data/logs.json)
+
+            if [ "$explicit" = "true" ]; then
+              echo "Workout day: explicit ON"
+              return 0
+            fi
+
+            if [ "$explicit" = "false" ]; then
+              echo "Workout day: explicit OFF"
+              return 1
+            fi
+
+            local default
+
+            default=$(jq -r \
+              --arg wd "$IST_WEEKDAY" \
+              '.days[$wd] // false' \
+              data/workout-settings.json 2>/dev/null || echo "false")
+
+            echo "Workout day: default=$default"
+
+            [ "$default" = "true" ]
           }
 
           # ==========================================================
           # WORKOUT ITEMS
+          #
+          # Only items with freq.type == workout are checked here.
           # ==========================================================
 
           all_workout_taken() {
@@ -280,7 +368,7 @@ jobs:
               data/items.json)
 
             if [ -z "$ids" ]; then
-              echo "$section: no workout items"
+              echo "$section: no workout items configured"
               return 0
             fi
 
@@ -377,12 +465,75 @@ jobs:
               return 0
             fi
 
+            # Add the daily workout description if one exists.
+            WORKOUT_DESCRIPTION=$(jq -r \
+              --arg d "$IST_DATE" \
+              '.[$d].__workout_details // empty' \
+              data/logs.json)
+
+            if [ -n "$WORKOUT_DESCRIPTION" ]; then
+              body="Workout: ${WORKOUT_DESCRIPTION}"$'\n\n'"$body"
+            fi
+
             echo "Sending: $title"
             echo "$body"
 
             curl -fsS \
               -H "Title: $title" \
               -H "Tags: muscle" \
+              -d "$body" \
+              "https://ntfy.sh/${NTFY_TOPIC}"
+
+            echo "Notification sent successfully: $title"
+          }
+
+          # ==========================================================
+          # SEND DAILY POST-WORKOUT SECTION
+          #
+          # Protein + creatine are DAILY in your items.json.
+          # Therefore post-workout is checked every day.
+          # ==========================================================
+
+          send_postworkout_section() {
+            local title="$1"
+            local body
+
+            body=$(jq -r '
+              [.[] |
+                select(
+                  .section == "postworkout" and
+                  .freq.type == "daily"
+                )
+              ]
+              | sort_by(.order)
+              | map(
+                  "• " + .name + " — " + .dose +
+                  (if .note then " (" + .note + ")" else "" end)
+                )
+              | join("\n")
+            ' \
+            data/items.json)
+
+            if [ -z "$body" ]; then
+              echo "Nothing scheduled for postworkout."
+              return 0
+            fi
+
+            WORKOUT_DESCRIPTION=$(jq -r \
+              --arg d "$IST_DATE" \
+              '.[$d].__workout_details // empty' \
+              data/logs.json)
+
+            if [ -n "$WORKOUT_DESCRIPTION" ]; then
+              body="Workout: ${WORKOUT_DESCRIPTION}"$'\n\n'"$body"
+            fi
+
+            echo "Sending: $title"
+            echo "$body"
+
+            curl -fsS \
+              -H "Title: $title" \
+              -H "Tags: muscle,pill" \
               -d "$body" \
               "https://ntfy.sh/${NTFY_TOPIC}"
 
@@ -419,8 +570,8 @@ jobs:
               data/items.json)
 
             if [ -z "$body" ]; then
-              echo "No weekly items for weekday=$weekday slot=$slot"
-              return 0
+              echo "No weekly items configured for weekday=$weekday slot=$slot."
+              return 1
             fi
 
             echo "Sending: $title"
@@ -436,6 +587,57 @@ jobs:
             echo "Notification sent successfully: $title"
           }
 
+          # ==========================================================
+          # CHECK WHETHER ALL WEEKLY ITEMS ARE TAKEN
+          # ==========================================================
+
+          all_weekly_taken() {
+            local weekday="$1"
+            local slot="$2"
+            local ids
+
+            ids=$(jq -r \
+              --argjson w "$weekday" \
+              --arg s "$slot" '
+                .[] |
+                select(
+                  .freq.type == "weekly" and
+                  .freq.weekday == $w and
+                  .freq.slot == $s
+                ) |
+                .id
+              ' \
+              data/items.json)
+
+            # No items means this slot should not send.
+            if [ -z "$ids" ]; then
+              echo "No weekly items exist for weekday=$weekday slot=$slot."
+              return 0
+            fi
+
+            for id in $ids; do
+
+              TAKEN=$(jq -r \
+                --arg d "$IST_DATE" \
+                --arg id "$id" \
+                '.[$d][$id] // false' \
+                data/logs.json)
+
+              echo "Weekly $weekday/$slot: $id = $TAKEN"
+
+              if [ "$TAKEN" != "true" ]; then
+                return 1
+              fi
+
+            done
+
+            return 0
+          }
+
+          # ==========================================================
+          # DAY NAMES
+          # ==========================================================
+
           DAY_NAMES=(
             Sunday
             Monday
@@ -447,17 +649,65 @@ jobs:
           )
 
           # ==========================================================
+          # FORCE MODE
+          #
+          # Force sends configured notifications immediately.
+          #
+          # It does NOT bypass the global notification ON/OFF switch,
+          # which was checked above.
+          #
+          # Force does not modify notification-log.json because this
+          # is a test and should not interfere with the real 15-minute
+          # reminder cycle.
+          # ==========================================================
+
+          if [ "$FORCE" = "true" ]; then
+
+            echo "=========================================="
+            echo "FORCE TEST MODE"
+            echo "=========================================="
+
+            send_daily_section morning "Morning stack"
+
+            send_daily_section evening "Evening stack"
+
+            if is_workout_day; then
+              send_workout_section preworkout "Pre-workout"
+            else
+              echo "Pre-workout skipped: today is not a workout day."
+            fi
+
+            send_postworkout_section "Post-workout"
+
+            for WD in $(jq -r '.weekly // {} | keys[]' data/schedule.json); do
+
+              for SLOT in $(jq -r \
+                --arg wd "$WD" \
+                '.weekly[$wd] // {} | keys[]' \
+                data/schedule.json); do
+
+                send_weekly_slot \
+                  "$WD" \
+                  "$SLOT" \
+                  "Weekly dose - ${DAY_NAMES[$WD]} ${SLOT} (test)" \
+                  || true
+
+              done
+
+            done
+
+            echo "Force test complete."
+            exit 0
+          fi
+
+          # ==========================================================
           # MORNING
           # ==========================================================
 
           MORNING_TARGET=$(get_schedule_time morning)
 
-          if [ "$FORCE" = "true" ]; then
-
-            send_daily_section morning "Morning stack"
-
-          elif [ -n "$MORNING_TARGET" ] && \
-               reminder_due "$MORNING_TARGET"; then
+          if [ -n "$MORNING_TARGET" ] && \
+             reminder_due "$MORNING_TARGET"; then
 
             if all_daily_taken morning; then
 
@@ -474,6 +724,10 @@ jobs:
 
             fi
 
+          else
+
+            echo "Morning: not due yet."
+
           fi
 
           # ==========================================================
@@ -482,12 +736,8 @@ jobs:
 
           EVENING_TARGET=$(get_schedule_time evening)
 
-          if [ "$FORCE" = "true" ]; then
-
-            send_daily_section evening "Evening stack"
-
-          elif [ -n "$EVENING_TARGET" ] && \
-               reminder_due "$EVENING_TARGET"; then
+          if [ -n "$EVENING_TARGET" ] && \
+             reminder_due "$EVENING_TARGET"; then
 
             if all_daily_taken evening; then
 
@@ -504,58 +754,62 @@ jobs:
 
             fi
 
+          else
+
+            echo "Evening: not due yet."
+
           fi
 
           # ==========================================================
           # PRE-WORKOUT
           #
-          # L-Arginine is freq.type = workout.
-          # Only active when __workout == true.
+          # Only active when today is a workout day.
           # ==========================================================
 
           PRE_TARGET=$(get_schedule_time workout_pre)
 
-          if [ "$FORCE" = "true" ]; then
+          if is_workout_day; then
 
-            send_workout_section preworkout "Pre-workout"
-
-          elif workout_active && \
-               [ -n "$PRE_TARGET" ] && \
+            if [ -n "$PRE_TARGET" ] && \
                reminder_due "$PRE_TARGET"; then
 
-            if all_workout_taken preworkout; then
+              if all_workout_taken preworkout; then
 
-              echo "Pre-workout: item taken. No notification."
+                echo "Pre-workout: item taken. No notification."
 
-            elif can_send_again workout_pre; then
+              elif can_send_again workout_pre; then
 
-              send_workout_section preworkout "Pre-workout"
-              mark_sent workout_pre
+                send_workout_section preworkout "Pre-workout"
+                mark_sent workout_pre
+
+              else
+
+                echo "Pre-workout: waiting for 15-minute interval."
+
+              fi
 
             else
 
-              echo "Pre-workout: waiting for 15-minute interval."
+              echo "Pre-workout: not due yet."
 
             fi
+
+          else
+
+            echo "Pre-workout: today is not a workout day."
 
           fi
 
           # ==========================================================
           # POST-WORKOUT
           #
-          # IMPORTANT:
-          # protein + creatine are DAILY items in items.json.
-          # Therefore this reminder is NOT gated by __workout.
+          # Protein + creatine are DAILY items, so this runs every day.
           # ==========================================================
 
           POST_TARGET=$(get_schedule_time workout_post)
 
-          if [ "$FORCE" = "true" ]; then
-
-            send_daily_section postworkout "Post-workout"
-
-          elif [ -n "$POST_TARGET" ] && \
-               reminder_due "$POST_TARGET"; then
+          if [ -n "$POST_TARGET" ] && \
+             reminder_due "$POST_TARGET"; then
 
             if all_daily_taken postworkout; then
 
@@ -563,7 +817,7 @@ jobs:
 
             elif can_send_again workout_post; then
 
-              send_daily_section postworkout "Post-workout"
+              send_postworkout_section "Post-workout"
               mark_sent workout_post
 
             else
@@ -572,148 +826,119 @@ jobs:
 
             fi
 
-          fi
-
-          # ==========================================================
-          # WEEKLY
-          #
-          # Each weekday + slot is independent.
-          #
-          # Example:
-          #   Saturday morning -> vitc
-          #   Saturday night   -> d3high
-          # ==========================================================
-
-          if [ "$FORCE" = "true" ]; then
-
-            echo "FORCE mode: sending all configured weekly slots."
-
-            for WD in $(jq -r '.weekly // {} | keys[]' data/schedule.json); do
-
-              for SLOT in $(jq -r \
-                --arg wd "$WD" \
-                '.weekly[$wd] // {} | keys[]' \
-                data/schedule.json); do
-
-                send_weekly_slot \
-                  "$WD" \
-                  "$SLOT" \
-                  "Weekly dose - ${DAY_NAMES[$WD]} ${SLOT} (test)"
-
-              done
-
-            done
-
           else
 
-            for SLOT in $(jq -r \
-              --arg wd "$IST_WEEKDAY" \
-              '.weekly[$wd] // {} | keys[]' \
-              data/schedule.json); do
-
-              WEEKLY_TARGET=$(jq -r \
-                --arg wd "$IST_WEEKDAY" \
-                --arg slot "$SLOT" \
-                '.weekly[$wd][$slot] // empty' \
-                data/schedule.json)
-
-              [ -z "$WEEKLY_TARGET" ] && continue
-
-              WEEKLY_TARGET_MIN=$(to_minutes "$WEEKLY_TARGET")
-              WEEKLY_DIFF=$((CUR_MIN - WEEKLY_TARGET_MIN))
-
-              MARKER="weekly_${IST_WEEKDAY}_${SLOT}"
-
-              echo "Checking weekly $SLOT: target=$WEEKLY_TARGET diff=${WEEKLY_DIFF}min"
-
-              # ------------------------------------------------------
-              # Find the actual item IDs for this weekday + slot.
-              # ------------------------------------------------------
-
-              WEEKLY_IDS=$(jq -r \
-                --argjson w "$IST_WEEKDAY" \
-                --arg s "$SLOT" '
-                  .[] |
-                  select(
-                    .freq.type == "weekly" and
-                    .freq.weekday == $w and
-                    .freq.slot == $s
-                  ) |
-                  .id
-                ' \
-                data/items.json)
-
-              ALL_TAKEN=true
-
-              if [ -z "$WEEKLY_IDS" ]; then
-
-                echo "No weekly items configured for $MARKER."
-
-              else
-
-                for ID in $WEEKLY_IDS; do
-
-                  TAKEN=$(jq -r \
-                    --arg d "$IST_DATE" \
-                    --arg id "$ID" \
-                    '.[$d][$id] // false' \
-                    data/logs.json)
-
-                  echo "Weekly $MARKER: $ID = $TAKEN"
-
-                  if [ "$TAKEN" != "true" ]; then
-                    ALL_TAKEN=false
-                  fi
-
-                done
-
-              fi
-
-              if [ "$ALL_TAKEN" = "true" ]; then
-
-                echo "Weekly $MARKER: all items taken."
-
-              elif [ "$WEEKLY_DIFF" -ge 0 ] && \
-                   can_send_again "$MARKER"; then
-
-                send_weekly_slot \
-                  "$IST_WEEKDAY" \
-                  "$SLOT" \
-                  "Weekly dose - ${DAY_NAMES[$IST_WEEKDAY]} ${SLOT}"
-
-                mark_sent "$MARKER"
-
-              else
-
-                echo "Weekly $MARKER: waiting for 15-minute interval."
-
-              fi
-
-            done
+            echo "Post-workout: not due yet."
 
           fi
 
           # ==========================================================
-          # SAVE NOTIFICATION STATE
+          # WEEKLY REMINDERS
           #
-          # ONLY notification-log.json is committed.
+          # Each weekday + slot has its own independent state.
+          # ==========================================================
+
+          for SLOT in $(jq -r \
+            --arg wd "$IST_WEEKDAY" \
+            '.weekly[$wd] // {} | keys[]' \
+            data/schedule.json); do
+
+            WEEKLY_TARGET=$(jq -r \
+              --arg wd "$IST_WEEKDAY" \
+              --arg slot "$SLOT" \
+              '.weekly[$wd][$slot] // empty' \
+              data/schedule.json)
+
+            [ -z "$WEEKLY_TARGET" ] && continue
+
+            WEEKLY_TARGET_MIN=$(to_minutes "$WEEKLY_TARGET")
+            WEEKLY_DIFF=$((CUR_MIN - WEEKLY_TARGET_MIN))
+
+            MARKER="weekly_${IST_WEEKDAY}_${SLOT}"
+
+            echo "Checking weekly $SLOT: target=$WEEKLY_TARGET diff=${WEEKLY_DIFF}min"
+
+            WEEKLY_IDS=$(jq -r \
+              --argjson w "$IST_WEEKDAY" \
+              --arg s "$SLOT" '
+                .[] |
+                select(
+                  .freq.type == "weekly" and
+                  .freq.weekday == $w and
+                  .freq.slot == $s
+                ) |
+                .id
+              ' \
+              data/items.json)
+
+            # No actual medicine/item exists for this schedule slot.
+            if [ -z "$WEEKLY_IDS" ]; then
+              echo "No weekly items configured for $MARKER. Skipping."
+              continue
+            fi
+
+            if [ "$WEEKLY_DIFF" -lt 0 ]; then
+
+              echo "Weekly $MARKER: not due yet."
+              continue
+
+            fi
+
+            if all_weekly_taken "$IST_WEEKDAY" "$SLOT"; then
+
+              echo "Weekly $MARKER: all items taken. No notification."
+
+            elif can_send_again "$MARKER"; then
+
+              send_weekly_slot \
+                "$IST_WEEKDAY" \
+                "$SLOT" \
+                "Weekly dose - ${DAY_NAMES[$IST_WEEKDAY]} ${SLOT}"
+
+              mark_sent "$MARKER"
+
+            else
+
+              echo "Weekly $MARKER: waiting for 15-minute interval."
+
+            fi
+
+          done
+
+          # ==========================================================
+          # COMMIT ONLY notification-log.json
           #
-          # logs.json is NEVER staged, committed or modified.
+          # logs.json is NEVER staged or committed.
           # ==========================================================
 
           if [ "$CHANGED" = "true" ]; then
 
+            echo "=========================================="
             echo "Updating data/notification-log.json..."
+            echo "=========================================="
+
+            echo "Notification log:"
+            cat data/notification-log.json
 
             git config user.name "supplement-tracker-bot"
             git config user.email "actions@users.noreply.github.com"
 
-            git add data/notification-log.json
+            # Force-add to protect against an existing .gitignore rule.
+            git add -f data/notification-log.json
+
+            if git diff --cached --quiet -- data/notification-log.json; then
+              echo "ERROR: notification-log.json was not staged."
+              echo "Current file:"
+              cat data/notification-log.json
+              exit 1
+            fi
 
             git commit \
-              -m "Update notification state for $IST_DATE" || true
+              -m "Update notification state for $IST_DATE"
 
             for i in 1 2 3; do
+
+              echo "Push attempt $i..."
 
               if git pull --rebase origin "$BRANCH" && \
                  git push origin "$BRANCH"; then
@@ -721,6 +946,11 @@ jobs:
                 echo "Notification state pushed successfully."
                 break
 
+              fi
+
+              if [ "$i" = "3" ]; then
+                echo "ERROR: Failed to push notification state."
+                exit 1
               fi
 
               echo "Push attempt $i failed, retrying..."
