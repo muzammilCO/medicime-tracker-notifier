@@ -100,9 +100,17 @@ that day's notification fires. Multiple items on the same weekday share one
 notification and one time.
 
 ### Limitations to know about
-- GitHub's free scheduled workflows can run a few minutes late during
-  high load — treat times as "around," not to-the-second. Pick times in
-  5-minute steps (the check itself runs every 5 minutes).
+- GitHub's free scheduled workflows can run late — sometimes by a lot during
+  high-load periods (top of the hour, midnight UTC). This workflow now
+  **catches up automatically**: each reminder stays "due" for 90 minutes past
+  its target time, and a marker in `data/logs.json` stops it firing twice if
+  GitHub runs the workflow more than once inside that window. You should get
+  every notification once, even if GitHub is running late — just not always
+  to-the-minute.
+- A brand-new or freshly-edited schedule can take 15 minutes to over an hour
+  before GitHub "recognizes" it and starts firing automatically. If nothing's
+  happened after that, push any small commit to the default branch — this is
+  GitHub's own documented fix for stuck schedules.
 - Scheduled workflows pause after 60 days of zero repo activity. Push any
   small commit, or run the workflow manually once, to wake it back up.
 - Once your D3 60,000 IU correction phase ends, delete the `d3high` entry
