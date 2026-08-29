@@ -648,7 +648,7 @@
     "creatine": true,
     "__workout": false,
     "larginine": true,
-    "__sent_evening": false,
+    "__sent_evening": true,
     "__sent_workout_post": true
   }
 }
