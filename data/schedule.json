@@ -4,7 +4,7 @@
   "workout_pre": "18:00",
   "workout_post": "19:15",
   "weekly": {
-    "0": "08:00",
-    "3": "08:00"
+    "0": { "morning": "08:00", "afternoon": "14:00", "night": "20:00" },
+    "3": { "morning": "08:00", "afternoon": "14:00", "night": "20:00" }
   }
 }
