@@ -505,7 +505,10 @@
         "note": "Topping up a fruit-based diet",
         "order": 2
       }
-    ]
+    ],
+    "multivit": true,
+    "bcomplex": true,
+    "shilajit": true
   },
   "2026-08-28": {
     "__items": [
