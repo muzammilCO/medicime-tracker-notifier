@@ -116,8 +116,8 @@
     "section": "weekly",
     "freq": {
       "type": "weekly",
-      "weekday": 6,
-      "slot": "night"
+      "weekday": 5,
+      "slot": "morning"
     },
     "note": "Topping up a fruit-based diet",
     "order": 2,
