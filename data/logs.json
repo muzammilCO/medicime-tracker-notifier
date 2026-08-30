@@ -40,13 +40,13 @@
         "freq": {
           "type": "workout"
         },
-        "note": "30–45 min before training",
+        "note": "30-45 min before training",
         "order": 1
       },
       {
         "id": "protein",
         "name": "Protein powder",
-        "dose": "1 scoop (~24–30g)",
+        "dose": "1 scoop (~24-30g)",
         "section": "postworkout",
         "freq": {
           "type": "daily"
@@ -57,7 +57,7 @@
       {
         "id": "creatine",
         "name": "Creatine monohydrate",
-        "dose": "3–5g",
+        "dose": "3-5g",
         "section": "postworkout",
         "freq": {
           "type": "daily"
@@ -78,7 +78,7 @@
       {
         "id": "omega3",
         "name": "Omega-3 (EPA/DHA)",
-        "dose": "1–2 capsules",
+        "dose": "1-2 capsules",
         "section": "evening",
         "freq": {
           "type": "daily"
@@ -107,7 +107,7 @@
           "weekday": 0,
           "slot": "morning"
         },
-        "note": "Correction phase, 8–10 weeks only",
+        "note": "Correction phase, 8-10 weeks only",
         "tag": "Phase 1",
         "order": 1
       },
@@ -167,13 +167,13 @@
         "freq": {
           "type": "workout"
         },
-        "note": "30–45 min before training",
+        "note": "30-45 min before training",
         "order": 1
       },
       {
         "id": "protein",
         "name": "Protein powder",
-        "dose": "1 scoop (~24–30g)",
+        "dose": "1 scoop (~24-30g)",
         "section": "postworkout",
         "freq": {
           "type": "daily"
@@ -184,7 +184,7 @@
       {
         "id": "creatine",
         "name": "Creatine monohydrate",
-        "dose": "3–5g",
+        "dose": "3-5g",
         "section": "postworkout",
         "freq": {
           "type": "daily"
@@ -205,7 +205,7 @@
       {
         "id": "omega3",
         "name": "Omega-3 (EPA/DHA)",
-        "dose": "1–2 capsules",
+        "dose": "1-2 capsules",
         "section": "evening",
         "freq": {
           "type": "daily"
@@ -234,7 +234,7 @@
           "weekday": 0,
           "slot": "morning"
         },
-        "note": "Correction phase, 8–10 weeks only",
+        "note": "Correction phase, 8-10 weeks only",
         "tag": "Phase 1",
         "order": 1
       },
@@ -294,13 +294,13 @@
         "freq": {
           "type": "workout"
         },
-        "note": "30–45 min before training",
+        "note": "30-45 min before training",
         "order": 1
       },
       {
         "id": "protein",
         "name": "Protein powder",
-        "dose": "1 scoop (~24–30g)",
+        "dose": "1 scoop (~24-30g)",
         "section": "postworkout",
         "freq": {
           "type": "daily"
@@ -311,7 +311,7 @@
       {
         "id": "creatine",
         "name": "Creatine monohydrate",
-        "dose": "3–5g",
+        "dose": "3-5g",
         "section": "postworkout",
         "freq": {
           "type": "daily"
@@ -332,7 +332,7 @@
       {
         "id": "omega3",
         "name": "Omega-3 (EPA/DHA)",
-        "dose": "1–2 capsules",
+        "dose": "1-2 capsules",
         "section": "evening",
         "freq": {
           "type": "daily"
@@ -361,7 +361,7 @@
           "weekday": 0,
           "slot": "morning"
         },
-        "note": "Correction phase, 8–10 weeks only",
+        "note": "Correction phase, 8-10 weeks only",
         "tag": "Phase 1",
         "order": 1
       },
@@ -423,13 +423,13 @@
         "freq": {
           "type": "workout"
         },
-        "note": "30–45 min before training",
+        "note": "30-45 min before training",
         "order": 1
       },
       {
         "id": "protein",
         "name": "Protein powder",
-        "dose": "1 scoop (~24–30g)",
+        "dose": "1 scoop (~24-30g)",
         "section": "postworkout",
         "freq": {
           "type": "daily"
@@ -440,7 +440,7 @@
       {
         "id": "creatine",
         "name": "Creatine monohydrate",
-        "dose": "3–5g",
+        "dose": "3-5g",
         "section": "postworkout",
         "freq": {
           "type": "daily"
@@ -461,7 +461,7 @@
       {
         "id": "omega3",
         "name": "Omega-3 (EPA/DHA)",
-        "dose": "1–2 capsules",
+        "dose": "1-2 capsules",
         "section": "evening",
         "freq": {
           "type": "daily"
@@ -490,7 +490,7 @@
           "weekday": 0,
           "slot": "morning"
         },
-        "note": "Correction phase, 8–10 weeks only",
+        "note": "Correction phase, 8-10 weeks only",
         "tag": "Phase 1",
         "order": 1
       },
@@ -550,13 +550,13 @@
         "freq": {
           "type": "workout"
         },
-        "note": "30–45 min before training",
+        "note": "30-45 min before training",
         "order": 1
       },
       {
         "id": "protein",
         "name": "Protein powder",
-        "dose": "1 scoop (~24–30g)",
+        "dose": "1 scoop (~24-30g)",
         "section": "postworkout",
         "freq": {
           "type": "daily"
@@ -567,7 +567,7 @@
       {
         "id": "creatine",
         "name": "Creatine monohydrate",
-        "dose": "3–5g",
+        "dose": "3-5g",
         "section": "postworkout",
         "freq": {
           "type": "daily"
@@ -588,7 +588,7 @@
       {
         "id": "omega3",
         "name": "Omega-3 (EPA/DHA)",
-        "dose": "1–2 capsules",
+        "dose": "1-2 capsules",
         "section": "evening",
         "freq": {
           "type": "daily"
@@ -617,7 +617,7 @@
           "weekday": 0,
           "slot": "morning"
         },
-        "note": "Correction phase, 8–10 weeks only",
+        "note": "Correction phase, 8-10 weeks only",
         "tag": "Phase 1",
         "order": 1
       },
@@ -691,13 +691,13 @@
         "freq": {
           "type": "workout"
         },
-        "note": "30–45 min before training",
+        "note": "30-45 min before training",
         "order": 1
       },
       {
         "id": "protein",
         "name": "Protein powder",
-        "dose": "1 scoop (~24–30g)",
+        "dose": "1 scoop (~24-30g)",
         "section": "postworkout",
         "freq": {
           "type": "daily"
@@ -708,7 +708,7 @@
       {
         "id": "creatine",
         "name": "Creatine monohydrate",
-        "dose": "3–5g",
+        "dose": "3-5g",
         "section": "postworkout",
         "freq": {
           "type": "daily"
@@ -729,7 +729,7 @@
       {
         "id": "omega3",
         "name": "Omega-3 (EPA/DHA)",
-        "dose": "1–2 capsules",
+        "dose": "1-2 capsules",
         "section": "evening",
         "freq": {
           "type": "daily"
@@ -756,9 +756,9 @@
         "freq": {
           "type": "weekly",
           "weekday": 0,
-          "slot": "afternoon"
+          "slot": "morning"
         },
-        "note": "Correction phase, 8–10 weeks only",
+        "note": "Correction phase, 8-10 weeks only",
         "tag": "Phase 1",
         "order": 1
       },
@@ -769,12 +769,11 @@
         "section": "weekly",
         "freq": {
           "type": "weekly",
-          "weekday": 5,
-          "slot": "afternoon"
+          "weekday": 3,
+          "slot": "morning"
         },
         "note": "Topping up a fruit-based diet",
-        "order": 2,
-        "tag": ""
+        "order": 2
       }
     ]
   },
