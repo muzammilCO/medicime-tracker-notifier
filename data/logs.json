@@ -924,5 +924,10 @@
         "tag": ""
       }
     ]
+  },
+  "2026-09-01": {
+    "multivit": true,
+    "bcomplex": true,
+    "shilajit": true
   }
 }
