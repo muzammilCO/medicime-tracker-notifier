@@ -1465,6 +1465,12 @@
   "2026-09-04": {
     "multivit": true,
     "bcomplex": true,
-    "shilajit": true
+    "shilajit": true,
+    "larginine": true,
+    "protein": true,
+    "creatine": true,
+    "calcium": true,
+    "omega3": true,
+    "maglycid3": true
   }
 }
