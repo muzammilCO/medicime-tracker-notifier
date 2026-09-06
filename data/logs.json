@@ -1735,5 +1735,15 @@
         "tag": ""
       }
     ]
+  },
+  "2026-09-06": {
+    "bcomplex": true,
+    "multivit": true,
+    "shilajit": true,
+    "protein": true,
+    "creatine": true,
+    "calcium": true,
+    "omega3": true,
+    "maglycid3": true
   }
 }
