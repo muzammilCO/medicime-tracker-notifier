@@ -125,7 +125,7 @@ jobs:
           # ==========================================================
 
           NOTIFICATIONS_ENABLED=$(jq -r \
-            '.enabled // true' \
+            'if .enabled == false then "false" else "true" end' \
             data/notification-settings.json 2>/dev/null || echo "true")
 
           echo "Notifications enabled: $NOTIFICATIONS_ENABLED"
